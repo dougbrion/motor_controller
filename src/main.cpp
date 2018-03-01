@@ -1,4 +1,5 @@
 #include "mbed.h"
+#include "hash/SHA256.h"
 //#include "rtos.h"
 
 //Photointerrupter input pins
@@ -58,6 +59,24 @@ DigitalOut L2H(L2Hpin);
 DigitalOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
+//Serial port
+Serial pc(SERIAL_TX, SERIAL_RX);
+
+//Bitcoin initialisation
+uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64,
+0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73,
+0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E,
+0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20,
+0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20,
+0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+
+uint64_t* key = (uint64_t*)((int)sequence + 48);
+uint64_t* nonce = (uint64_t*)((int)sequence + 56);
+uint8_t hash[32];
+uint32_t hash_count = 0;
+
 //Set a given drive state
 void motorOut(int8_t driveState){
 
@@ -101,12 +120,16 @@ void updateMotor(){
     motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
 }
 
+void count_hash(){
+    pc.printf("Current Hash Rate: %dH/s\n", hash_count);
+    hash_count = 0;
+}
+
 //Main
 int main() {
 
     //Initialise the serial port
-    Serial pc(SERIAL_TX, SERIAL_RX);
-    pc.printf("Hello This is us\n\r");
+    pc.printf("Hello from Thom&Doug\n\r");
 
     //Run the motor synchronisation
     orState = motorHome();
@@ -121,6 +144,16 @@ int main() {
     I3.rise(&updateMotor);
     I3.fall(&updateMotor);
 
+    //setup timer
+    Ticker t;
+    t.attach(&count_hash, 1.0);
+
     updateMotor();
-    while (1) {}
+    while (1) {
+        SHA256::computeHash(hash, sequence, 64);
+        //successful nonce
+        if((hash[0] == 0) && (hash[1] == 0)) pc.printf("Nonce found: %16x\n", *nonce);
+        *nonce += 1;
+        hash_count++;
+    }
 }
