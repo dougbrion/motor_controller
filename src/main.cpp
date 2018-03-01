@@ -133,18 +133,11 @@ void count_hash(){
 }
 
 void I1_updateMotor(){
-    static bool count;
     static Timer t;
-    if(count == false){
-        count = true;
-        t.start();
-    }
-    else{
-        t.stop();
-        speed = 1.0 / t.read();
-        t.reset();
-        count = false;
-    }
+    t.stop();
+    speed = 1.0 / t.read();
+    t.reset();
+    t.start();
     updateMotor();
 }
 
