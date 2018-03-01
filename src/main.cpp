@@ -76,6 +76,7 @@ uint64_t* key = (uint64_t*)((int)sequence + 48);
 uint64_t* nonce = (uint64_t*)((int)sequence + 56);
 uint8_t hash[32];
 uint32_t hash_count = 0;
+uint32_t speed;
 
 //Set a given drive state
 void motorOut(int8_t driveState){
@@ -120,9 +121,31 @@ void updateMotor(){
     motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
 }
 
+//temporarily inline to speed up
+inline void count_speed(){
+    pc.printf("Speed: %d Revolutions/s\n", speed);
+}
+
 void count_hash(){
     pc.printf("Current Hash Rate: %dH/s\n", hash_count);
     hash_count = 0;
+    count_speed(); //temporarily here
+}
+
+void I1_updateMotor(){
+    static bool count;
+    static Timer t;
+    if(count == false){
+        count = true;
+        t.start();
+    }
+    else{
+        t.stop();
+        speed = 1.0 / t.read();
+        t.reset();
+        count = false;
+    }
+    updateMotor();
 }
 
 //Main
@@ -137,7 +160,7 @@ int main() {
     //orState is subtracted from future rotor state inputs to align rotor and motor states
 
     //set interrupts
-    I1.rise(&updateMotor);
+    I1.rise(&I1_updateMotor);
     I1.fall(&updateMotor);
     I2.rise(&updateMotor);
     I2.fall(&updateMotor);
