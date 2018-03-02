@@ -1,5 +1,6 @@
 #include "mbed.h"
 #include "hash/SHA256.h"
+#include <cctype>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -38,7 +39,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
 //Phase lead to make motor spin
-const int8_t lead = 2;  //2 for forwards, -2 for backwards
+const int8_t lead = 4;  //2 for forwards, -2 for backwards
 
 int8_t orState = 0;
 
@@ -130,7 +131,11 @@ inline void count_speed(){
 void count_hash(){
     pc.printf("Current Hash Rate: %dH/s\n", hash_count);
     hash_count = 0;
-    count_speed(); //temporarily here
+}
+
+void count(){
+    count_hash();
+    count_speed();
 }
 
 void I1_updateMotor(){
@@ -142,36 +147,14 @@ void I1_updateMotor(){
     updateMotor();
 }
 
-volatile float inputs[3];
-volatile bool newData = false;
-
-void get_input(){
-    static char inBuffer[32];
-    static int inCount = 0;
-
-    while (pc.readable()) {
-        char inByte = pc.getc();
-        // check if end of line
-        if ((inByte == 0x0D) || (inByte == 0x0A)) {
-            pc.printf("If");
-            inBuffer[inCount] == 0;
-            float a, b, c;
-            if (sscanf(inBuffer,"%f,%f,%f",&a,&b,&c) == 3) {
-                inputs[0] = a;
-                inputs[1] = b;
-                inputs[2] = c;
-                newData = true;
-            }
-            inCount = 0;
-        }
-        else {
-            pc.printf("Else");
-            inBuffer[inCount] = inByte;
-            if (inCount < 32) {
-                inCount++;
-            }
+bool check_valid(const char* buff){
+    const int string_len = strlen(buff);
+    for (int i = 0; i < string_len; ++i){
+        if(!isdigit(buff[i])){
+            return false;
         }
     }
+    return true;
 }
 
 //Main
@@ -179,40 +162,47 @@ int main() {
 
     //Initialise the serial port
     pc.printf("Welcome to our motor controller\n\r");
-    pc.printf("Enter a speed...");
-    
-    pc.attach(&get_input);
-  
-    while (true) {
-        if (newData){  
-            newData = false;
-            pc.printf("Got %.3f, %.3f, %.3f\n\r",inputs[0],inputs[1],inputs[2]);
-        }
-    }
     
     //Run the motor synchronisation
-    // orState = motorHome();
-    // pc.printf("Rotor origin: %x\n\r",orState);
+    orState = motorHome();
+    pc.printf("Rotor origin: %x\n\r",orState);
     //orState is subtracted from future rotor state inputs to align rotor and motor states
 
     //set interrupts
-    // I1.rise(&I1_updateMotor);
-    // I1.fall(&updateMotor);
-    // I2.rise(&updateMotor);
-    // I2.fall(&updateMotor);
-    // I3.rise(&updateMotor);
-    // I3.fall(&updateMotor);
+    I1.rise(&I1_updateMotor);
+    I1.fall(&updateMotor);
+    I2.rise(&updateMotor);
+    I2.fall(&updateMotor);
+    I3.rise(&updateMotor);
+    I3.fall(&updateMotor);
 
     //setup timer
-    // Ticker t;
-    // t.attach(&count_hash, 1.0);
+    Ticker t;
+    t.attach(&count, 1.0);
 
-    // updateMotor();
-    // while (1) {
-    //     SHA256::computeHash(hash, sequence, 64);
-    //     //successful nonce
-    //     if((hash[0] == 0) && (hash[1] == 0)) pc.printf("Nonce found: %16x\n", *nonce);
-    //     *nonce += 1;
-    //     hash_count++;
-    // }
+    updateMotor();
+    while (true) {
+        SHA256::computeHash(hash, sequence, 64);
+        //successful nonce
+        if((hash[0] == 0) && (hash[1] == 0)){
+            // pc.printf("Nonce found: %16x\n", *nonce);
+        }
+        *nonce += 1;
+        hash_count++;
+        
+        if (pc.readable()){
+            pc.printf("Enter a speed...");
+            char c = pc.getc();
+            char buffer[128];
+            pc.gets(buffer, 4);
+            if (check_valid(buffer)){
+                pc.printf("I got '%s'\n", buffer);
+                int i  = atoi(buffer);
+            }
+            else {
+                pc.printf("You didn't enter a number!");
+            }
+        }
+        
+    }
 }

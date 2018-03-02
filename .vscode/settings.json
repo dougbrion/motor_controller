@@ -2,5 +2,8 @@
     "terminal.integrated.env.linux": {
         "PATH": "/home/douglas/.platformio/penv/bin:/home/douglas/.platformio/penv:/home/douglas/Documents/esp/xtensa-esp32-elf/bin:/home/douglas/Documents/esp/xtensa-esp32-elf/bin:/bin:/usr/bin:/usr/local/bin:/usr/X11R6/bin",
         "PLATFORMIO_CALLER": "vscode"
+    },
+    "files.associations": {
+        "cstdio": "cpp"
     }
 }
