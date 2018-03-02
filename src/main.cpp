@@ -1,6 +1,5 @@
 #include "mbed.h"
 #include "hash/SHA256.h"
-//#include "rtos.h"
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -39,7 +38,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
 //Phase lead to make motor spin
-const int8_t lead = -2;  //2 for forwards, -2 for backwards
+const int8_t lead = 2;  //2 for forwards, -2 for backwards
 
 int8_t orState = 0;
 
@@ -63,14 +62,16 @@ DigitalOut L3H(L3Hpin);
 Serial pc(SERIAL_TX, SERIAL_RX);
 
 //Bitcoin initialisation
-uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64,
-0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73,
-0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E,
-0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20,
-0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20,
-0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20,
-0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+uint8_t sequence[] = {   
+                        0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64,
+                        0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73,
+                        0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E,
+                        0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20,
+                        0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20,
+                        0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20,
+                        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+                     };
 
 uint64_t* key = (uint64_t*)((int)sequence + 48);
 uint64_t* nonce = (uint64_t*)((int)sequence + 56);
@@ -118,7 +119,7 @@ int8_t motorHome() {
 
 void updateMotor(){
     int8_t intState = readRotorState();
-    motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
+    motorOut((intState - orState + lead + 6) % 6); //+6 to make sure the remainder is positive
 }
 
 //temporarily inline to speed up
@@ -148,35 +149,77 @@ void I1_updateMotor(){
     updateMotor();
 }
 
+volatile float inputs[3];
+volatile bool newData = false;
+
+void get_input(){
+    static char inBuffer[32];
+    static int inCount = 0;
+
+    while (pc.readable()) {
+        char inByte = pc.getc();
+        // check if end of line
+        if ((inByte == 0x0D) || (inByte == 0x0A)) {
+            pc.printf("If");
+            inBuffer[inCount] == 0;
+            float a, b, c;
+            if (sscanf(inBuffer,"%f,%f,%f",&a,&b,&c) == 3) {
+                inputs[0] = a;
+                inputs[1] = b;
+                inputs[2] = c;
+                newData = true;
+            }
+            inCount = 0;
+        }
+        else {
+            pc.printf("Else");
+            inBuffer[inCount] = inByte;
+            if (inCount < 32) {
+                inCount++;
+            }
+        }
+    }
+}
+
 //Main
 int main() {
 
     //Initialise the serial port
-    pc.printf("Hello from Thom&Doug\n\r");
-
+    pc.printf("Welcome to our motor controller\n\r");
+    pc.printf("Enter a speed...");
+    
+    pc.attach(&get_input);
+  
+    while (true) {
+        if (newData){  
+            newData = false;
+            pc.printf("Got %.3f, %.3f, %.3f\n\r",inputs[0],inputs[1],inputs[2]);
+        }
+    }
+    
     //Run the motor synchronisation
-    orState = motorHome();
-    pc.printf("Rotor origin: %x\n\r",orState);
+    // orState = motorHome();
+    // pc.printf("Rotor origin: %x\n\r",orState);
     //orState is subtracted from future rotor state inputs to align rotor and motor states
 
     //set interrupts
-    I1.rise(&I1_updateMotor);
-    I1.fall(&updateMotor);
-    I2.rise(&updateMotor);
-    I2.fall(&updateMotor);
-    I3.rise(&updateMotor);
-    I3.fall(&updateMotor);
+    // I1.rise(&I1_updateMotor);
+    // I1.fall(&updateMotor);
+    // I2.rise(&updateMotor);
+    // I2.fall(&updateMotor);
+    // I3.rise(&updateMotor);
+    // I3.fall(&updateMotor);
 
     //setup timer
-    Ticker t;
-    t.attach(&count_hash, 1.0);
+    // Ticker t;
+    // t.attach(&count_hash, 1.0);
 
-    updateMotor();
-    while (1) {
-        SHA256::computeHash(hash, sequence, 64);
-        //successful nonce
-        if((hash[0] == 0) && (hash[1] == 0)) pc.printf("Nonce found: %16x\n", *nonce);
-        *nonce += 1;
-        hash_count++;
-    }
+    // updateMotor();
+    // while (1) {
+    //     SHA256::computeHash(hash, sequence, 64);
+    //     //successful nonce
+    //     if((hash[0] == 0) && (hash[1] == 0)) pc.printf("Nonce found: %16x\n", *nonce);
+    //     *nonce += 1;
+    //     hash_count++;
+    // }
 }
