@@ -39,7 +39,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
 //Phase lead to make motor spin
-const int8_t lead = 4;  //2 for forwards, -2 for backwards
+const int8_t lead = 2;  //2 for forwards, -2 for backwards
 
 int8_t orState = 0;
 
@@ -125,11 +125,11 @@ void updateMotor(){
 
 //temporarily inline to speed up
 inline void count_speed(){
-    pc.printf("Speed: %d Revolutions/s\n", speed);
+    // pc.printf("Speed: %d Revolutions/s\n", speed);
 }
 
 void count_hash(){
-    pc.printf("Current Hash Rate: %dH/s\n", hash_count);
+    // pc.printf("Current Hash Rate: %dH/s\n", hash_count);
     hash_count = 0;
 }
 
@@ -191,17 +191,36 @@ int main() {
         hash_count++;
         
         if (pc.readable()){
-            pc.printf("Enter a speed...");
+            pc.printf("What's next commander?");
             char c = pc.getc();
-            char buffer[128];
-            pc.gets(buffer, 4);
-            if (check_valid(buffer)){
-                pc.printf("I got '%s'\n", buffer);
-                int i  = atoi(buffer);
+            switch (c) {
+                case 'R':
+                case 'r':
+                    pc.printf("Rotate a number of revolutions");
+                    break;
+                case 'V':
+                case 'v':
+                    pc.printf("Set maximum speed");
+                    break;
+                case 'K':
+                case 'k':
+                    pc.printf("Set bitcoin key");
+                    break;
+                case 'T':
+                case 't':
+                    pc.printf("Set tune");
+                    break;
+                default:
+                    pc.printf("Wrong order commander, think again!");
+                    break;
             }
-            else {
-                pc.printf("You didn't enter a number!");
-            }
+            // if (check_valid(buffer)){
+            //     pc.printf("I got '%s'\n", buffer);
+            //     int i  = atoi(buffer);
+            // }
+            // else {
+            //     pc.printf("You didn't enter a number!");
+            // }
         }
         
     }
