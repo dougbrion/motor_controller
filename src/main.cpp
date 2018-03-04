@@ -3,7 +3,7 @@
 #include <cctype>
 #include <thread>
 #include <chrono>
-// #include <mutex.h>
+#include <mutex>
 #include <stdlib.h>
 
 //Photointerrupter input pins
