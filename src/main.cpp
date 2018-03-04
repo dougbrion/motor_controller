@@ -1,9 +1,7 @@
 #include "mbed.h"
+#include "rtos.h"
 #include "hash/SHA256.h"
 #include <cctype>
-#include <thread>
-#include <chrono>
-#include <mutex>
 #include <stdlib.h>
 
 //Photointerrupter input pins
@@ -172,13 +170,13 @@ bool valid_key(const char* buff){
 }
 
 int mSpeed;
-std::mutex mSpeed_mutex;
+Mutex mSpeed_mutex;
 
 int bKey;
-std::mutex bKey_mutex;
+Mutex bKey_mutex;
 
 bool endT = true; // Shared boolean to end all threads, not sure if need to read
-std::mutex endT_mutex;
+Mutex endT_mutex;
 
 void bitcoin_kernel(){
   while (endT){
@@ -195,7 +193,7 @@ void bitcoin_kernel(){
     hash_count++;
     
     // 
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    // std::this_thread::sleep_for(std::chrono::seconds(3));
   }
 }
 
@@ -207,7 +205,7 @@ void motor_speed(){
     pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
     // Release mutex for speed
     mSpeed_mutex.unlock();
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    //std::this_thread::sleep_for(std::chrono::seconds(3));
   }
 }
 
@@ -239,7 +237,7 @@ void read_command(){
                   pc.printf("%c", c);
                   pc.printf("%s\n", buffer);
                   mSpeed_mutex.lock();
-                  max_speed = atof(buffer);
+                  mSpeed = atof(buffer);
                   mSpeed_mutex.unlock();
                   // pc.printf("%d\n", speed);
                   break;
@@ -252,7 +250,7 @@ void read_command(){
                   pc.printf("%s\n", buffer);
                   if (valid_key(buffer)){
                       bKey_mutex.lock();
-                      key = (int)strtol(buffer, NULL, 16);
+                      bKey = (int)strtol(buffer, NULL, 16);
                       bKey_mutex.unlock();
                       pc.printf("Yay");
                   } else {
@@ -275,10 +273,13 @@ void read_command(){
       }
     }
       // Sleep and check again later
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-  }
+    //std::this_thread::sleep_for(std::chrono::seconds(1));
+  
 }
 
+Thread t1;
+Thread t2;
+Thread t3;
 //Main
 int main() {
 
@@ -304,13 +305,16 @@ int main() {
     
     updateMotor();
     // Thread initialisation
-    std::thread bit_thread (bitcoin_kernel);
-    std::thread motor_thread (motor_speed);
-    std::thread command_thread (read_command);
+    //std::thread bit_thread (bitcoin_kernel);
+    //std::thread motor_thread (motor_speed);
+    //std::thread command_thread (read_command);
     
-    bit_thread.join();
-    motor_thead.join();
-    command_thread.join();
+    t1.start(bitcoin_kernel);
+    t2.start(motor_speed);
+    t2.start(read_command);
+    t1.join();
+    t2.join();
+    t3.join();
     
     pc.printf("All threads complete\n\r");
 }
