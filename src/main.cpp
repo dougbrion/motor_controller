@@ -1,7 +1,6 @@
 #include "mbed.h"
 #include "rtos.h"
 #include "hash/SHA256.h"
-#include <cctype>
 #include <stdlib.h>
 
 //Photointerrupter input pins
@@ -191,9 +190,7 @@ void bitcoin_kernel(){
     }
     *nonce += 1;
     hash_count++;
-    
-    // 
-    // std::this_thread::sleep_for(std::chrono::seconds(3));
+    Thread::wait(3000);
   }
 }
 
@@ -205,7 +202,7 @@ void motor_speed(){
     pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
     // Release mutex for speed
     mSpeed_mutex.unlock();
-    //std::this_thread::sleep_for(std::chrono::seconds(3));
+    Thread::wait(3000);
   }
 }
 
@@ -273,7 +270,7 @@ void read_command(){
       }
     }
       // Sleep and check again later
-    //std::this_thread::sleep_for(std::chrono::seconds(1));
+    Thread::wait(2000);
   
 }
 
@@ -311,7 +308,7 @@ int main() {
     
     t1.start(bitcoin_kernel);
     t2.start(motor_speed);
-    t2.start(read_command);
+    t3.start(read_command);
     t1.join();
     t2.join();
     t3.join();
