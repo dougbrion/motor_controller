@@ -1,10 +1,14 @@
 #include "mbed.h"
 #include "hash/SHA256.h"
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include <cctype>
 #include <thread>
 #include <chrono>
 #include <mutex>
+=======
+#include <stdlib.h>
+>>>>>>> 9df2284c95cbbc7c89ce7671c34cfbaefb7f8271
 =======
 #include <stdlib.h>
 >>>>>>> 9df2284c95cbbc7c89ce7671c34cfbaefb7f8271
