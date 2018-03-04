@@ -125,11 +125,11 @@ void updateMotor(){
 
 //temporarily inline to speed up
 inline void count_speed(){
-    // pc.printf("Speed: %d Revolutions/s\n", speed);
+    pc.printf("Speed: %d Revolutions/s\n", speed);
 }
 
 void count_hash(){
-    // pc.printf("Current Hash Rate: %dH/s\n", hash_count);
+    pc.printf("Current Hash Rate: %dH/s\n", hash_count);
     hash_count = 0;
 }
 
@@ -195,7 +195,7 @@ int main() {
         SHA256::computeHash(hash, sequence, 64);
         //successful nonce
         if((hash[0] == 0) && (hash[1] == 0)){
-            // pc.printf("Nonce found: %16x\n", *nonce);
+            pc.printf("Nonce found: %16x\n", *nonce);
         }
         *nonce += 1;
         hash_count++;
@@ -205,7 +205,6 @@ int main() {
             pc.printf("What's next commander?\n");
             char c = pc.getc();
             char buffer[32];
-            // pc.gets(buffer, 1);
             switch (c) {
                 case 'R':
                 case 'r':
