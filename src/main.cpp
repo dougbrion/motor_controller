@@ -251,7 +251,7 @@ int main() {
     t2.start(motor_speed);
     pc.printf("2");
     wait(5);
-    
+
     // Thread t3;
 
     //Initialise the serial port
@@ -277,12 +277,8 @@ int main() {
     //setup timer
     // Ticker t;
     // t.attach(&count, 1.0);
-    
-    updateMotor();
-    while(1){}
-    // Thread initialisation
 
-    
+    updateMotor();
     while (true){
         if (pc.readable()){
             pc.printf("What's next commander?\n");
@@ -340,6 +336,6 @@ int main() {
     t1.join();
     t2.join();
 
-    
+
     pc.printf("All threads complete\n\r");
 }
