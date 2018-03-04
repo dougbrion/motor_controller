@@ -1,6 +1,6 @@
 #include "mbed.h"
 #include "hash/SHA256.h"
-#include <cctype>
+#include <stdlib.h>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -147,14 +147,24 @@ void I1_updateMotor(){
     updateMotor();
 }
 
-bool check_valid(const char* buff){
+bool valid_key(const char* buff){
+    bool valid = false;
     const int string_len = strlen(buff);
     for (int i = 0; i < string_len; ++i){
-        if(!isdigit(buff[i])){
+        if (buff[i] > 47 && buff[i] < 58){
+            // 0-9
+            valid = true;
+        } else if (buff[i] > 64 && buff[i] < 71){
+            // A-F
+            valid = true;
+        } else if (buff[i] > 96 && buff[i] < 103){
+            // a-f
+            valid = true;
+        } else {
             return false;
         }
     }
-    return true;
+    return valid;
 }
 
 //Main
@@ -191,27 +201,50 @@ int main() {
         hash_count++;
         
         if (pc.readable()){
-            pc.printf("What's next commander?");
+            pc.printf("What's next commander?\n");
             char c = pc.getc();
+            char buffer[32];
+            // pc.gets(buffer, 1);
             switch (c) {
                 case 'R':
                 case 'r':
-                    pc.printf("Rotate a number of revolutions");
+                    pc.printf("Rotate a number of revolutions\n");
+                    pc.gets(buffer, 7);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
                     break;
                 case 'V':
                 case 'v':
-                    pc.printf("Set maximum speed");
+                    pc.printf("Set maximum speed\n");
+                    pc.gets(buffer, 7);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    float speed = atof(buffer);
+                    // pc.printf("%d\n", speed);
                     break;
                 case 'K':
                 case 'k':
-                    pc.printf("Set bitcoin key");
+                    // K[0-9a-f]{16}
+                    pc.printf("Set bitcoin key\n");
+                    pc.gets(buffer, 16);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    if (valid_key(buffer)){
+                        int key = (int)strtol(buffer, NULL, 16);
+                        pc.printf("Yay");
+                    } else {
+                        pc.printf("Nay");
+                    }
                     break;
                 case 'T':
                 case 't':
-                    pc.printf("Set tune");
+                    pc.printf("Set tune\n");
+                    pc.gets(buffer, 16);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
                     break;
                 default:
-                    pc.printf("Wrong order commander, think again!");
+                    pc.printf("Wrong order commander, think again!\n");
                     break;
             }
             // if (check_valid(buffer)){
