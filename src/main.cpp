@@ -67,7 +67,7 @@ InterruptIn channelB(CHB);
 //Serial port
 Serial pc(SERIAL_TX, SERIAL_RX);
 
-//Bitcoin initialisation
+// ---------- BITCOIN VARIABLES ----------
 uint8_t sequence[] = {
                         0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64,
                         0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73,
@@ -83,9 +83,28 @@ volatile uint64_t* key = (uint64_t*)((int)sequence + 48);
 volatile uint64_t* nonce = (uint64_t*)((int)sequence + 56);
 uint8_t hash[32];
 uint32_t hash_count = 0;
+
+// ---------- SPEED/ENCODER VARIABLES ----------
 uint32_t speed;
 int32_t encoder_state = 0;
 
+
+// ---------- THREADING VARIABLES ----------
+Thread t1;
+Thread t2;
+
+int mSpeed;
+Mutex mSpeed_mutex;
+
+int bKey = 0;
+Mutex bKey_mutex;
+
+volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
+Mutex endT_mutex;
+
+volatile int test = 0;
+
+// ------------- FUNCTIONS -------------
 //Set a given drive state
 void motorOut(int8_t driveState){
 
@@ -195,18 +214,7 @@ bool valid_key(const char* buff){
     return valid;
 }
 
-int mSpeed;
-Mutex mSpeed_mutex;
-
-int bKey = 0;
-Mutex bKey_mutex;
-
-volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
-Mutex endT_mutex;
-
-volatile int test = 0;
-
-void bitcoin_kernel(int* t){
+void bitcoin_kernel(){
     // while (endT){
         // bKey_mutex.lock();
         // SHA256::computeHash(hash, sequence, 64);
@@ -219,14 +227,13 @@ void bitcoin_kernel(int* t){
         // }
         // *nonce += 1;
         // hash_count++;
-        *t = 1;
+        //pc.printf("Test print from thread");
         // wait(1.0);
-        // Thread::yield();
     // }
 }
 
 void motor_speed(){
-  while(endT){
+  while(true){
     // Get mutex for speed
     // mSpeed_mutex.lock();
     // Motor control stuff
@@ -238,21 +245,7 @@ void motor_speed(){
   }
 }
 
-Thread t1;
-Thread t2;
-//Main
 int main() {
-
-    pc.printf("Before");
-    pc.printf("%i", test);
-    t1.start(callback(bitcoin_kernel, &test));
-    pc.printf("%i", test);
-    // pc.printf("1");
-    t2.start(motor_speed);
-    pc.printf("2");
-    wait(5);
-
-    // Thread t3;
 
     //Initialise the serial port
     pc.printf("Welcome to our motor controller\n\r");
@@ -277,6 +270,15 @@ int main() {
     //setup timer
     // Ticker t;
     // t.attach(&count, 1.0);
+
+    pc.printf("Before\n");
+    pc.printf("%i", test);
+    t1.start(&bitcoin_kernel);
+    pc.printf("%i", test);
+    // pc.printf("1");
+    t2.start(&motor_speed);
+    pc.printf("2");
+    wait(5);
 
     updateMotor();
     while (true){
@@ -332,10 +334,4 @@ int main() {
             }
         }
     }
-    endT = false;
-    t1.join();
-    t2.join();
-
-
-    pc.printf("All threads complete\n\r");
 }
