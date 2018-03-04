@@ -199,7 +199,8 @@ int main() {
         }
         *nonce += 1;
         hash_count++;
-        
+        int key;
+        int max_speed;
         if (pc.readable()){
             pc.printf("What's next commander?\n");
             char c = pc.getc();
@@ -219,7 +220,7 @@ int main() {
                     pc.gets(buffer, 7);
                     pc.printf("%c", c);
                     pc.printf("%s\n", buffer);
-                    float speed = atof(buffer);
+                    max_speed = atof(buffer);
                     // pc.printf("%d\n", speed);
                     break;
                 case 'K':
@@ -230,7 +231,7 @@ int main() {
                     pc.printf("%c", c);
                     pc.printf("%s\n", buffer);
                     if (valid_key(buffer)){
-                        int key = (int)strtol(buffer, NULL, 16);
+                        key = (int)strtol(buffer, NULL, 16);
                         pc.printf("Yay");
                     } else {
                         pc.printf("Nay");
