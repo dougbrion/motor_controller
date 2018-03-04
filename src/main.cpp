@@ -75,11 +75,11 @@ uint8_t sequence[] = {
                         0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
                      };
 
-uint64_t* key = (uint64_t*)((int)sequence + 48);
-uint64_t* nonce = (uint64_t*)((int)sequence + 56);
+volatile uint64_t* key = (uint64_t*)((int)sequence + 48);
+volatile uint64_t* nonce = (uint64_t*)((int)sequence + 56);
 uint8_t hash[32];
-uint32_t hash_count = 0;
-uint32_t speed;
+volatile uint32_t hash_count = 0;
+volatile uint32_t speed;
 
 //Set a given drive state
 void motorOut(int8_t driveState){
@@ -171,114 +171,61 @@ bool valid_key(const char* buff){
 int mSpeed;
 Mutex mSpeed_mutex;
 
-int bKey;
+int bKey = 0;
 Mutex bKey_mutex;
 
-bool endT = true; // Shared boolean to end all threads, not sure if need to read
+volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
 Mutex endT_mutex;
 
-void bitcoin_kernel(){
-  while (endT){
-    bKey_mutex.lock();
-    SHA256::computeHash(hash, sequence, 64);
-    pc.printf("Key is:%d\n",bKey);
-    // Release lock
-    bKey_mutex.unlock();
-    //successful nonce
-    if((hash[0] == 0) && (hash[1] == 0)){
-      // pc.printf("Nonce found: %16x\n", *nonce);
-    }
-    *nonce += 1;
-    hash_count++;
-    Thread::wait(3000);
-  }
+volatile int test = 0;
+
+void bitcoin_kernel(int* t){
+    // while (endT){
+        // bKey_mutex.lock();
+        // SHA256::computeHash(hash, sequence, 64);
+        // // pc.printf("Key is:%d\n",bKey);
+        // // Release lock
+        // // bKey_mutex.unlock();
+        // //successful nonce
+        // if((hash[0] == 0) && (hash[1] == 0)){
+        //     // pc.printf("Nonce found: %16x\n", *nonce);
+        // }
+        // *nonce += 1;
+        // hash_count++;
+        *t = 1;
+        // wait(1.0);
+        // Thread::yield();
+    // }
 }
 
 void motor_speed(){
   while(endT){
     // Get mutex for speed
-    mSpeed_mutex.lock();
+    // mSpeed_mutex.lock();
     // Motor control stuff
-    pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
+    // pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
     // Release mutex for speed
-    mSpeed_mutex.unlock();
-    Thread::wait(3000);
+    // mSpeed_mutex.unlock();
+    wait(1.0);
+    // Thread::yield();
   }
-}
-
-bool check_for_input(){
-  return true;
-}
-
-void read_command(){
-  while(endT){
-    // Wait for user input - poll serial port to check whether there is an input
-    if (check_for_input()){
-      // Process input
-      if (pc.readable()){
-          pc.printf("What's next commander?\n");
-          char c = pc.getc();
-          char buffer[32];
-          switch (c) {
-              case 'R':
-              case 'r':
-                  pc.printf("Rotate a number of revolutions\n");
-                  pc.gets(buffer, 7);
-                  pc.printf("%c", c);
-                  pc.printf("%s\n", buffer);
-                  break;
-              case 'V':
-              case 'v':
-                  pc.printf("Set maximum speed\n");
-                  pc.gets(buffer, 7);
-                  pc.printf("%c", c);
-                  pc.printf("%s\n", buffer);
-                  mSpeed_mutex.lock();
-                  mSpeed = atof(buffer);
-                  mSpeed_mutex.unlock();
-                  // pc.printf("%d\n", speed);
-                  break;
-              case 'K':
-              case 'k':
-                  // K[0-9a-f]{16}
-                  pc.printf("Set bitcoin key\n");
-                  pc.gets(buffer, 16);
-                  pc.printf("%c", c);
-                  pc.printf("%s\n", buffer);
-                  if (valid_key(buffer)){
-                      bKey_mutex.lock();
-                      bKey = (int)strtol(buffer, NULL, 16);
-                      bKey_mutex.unlock();
-                      pc.printf("Yay");
-                  } else {
-                      pc.printf("Nay");
-                  }
-                  break;
-              case 'T':
-              case 't':
-                  pc.printf("Set tune\n");
-                  pc.gets(buffer, 16);
-                  pc.printf("%c", c);
-                  pc.printf("%s\n", buffer);
-                  break;
-              default:
-                  pc.printf("Wrong order commander, think again!\n");
-                  break;
-          }
-      }
-      // Sleep
-      }
-    }
-      // Sleep and check again later
-    Thread::wait(2000);
-  
 }
 
 Thread t1;
 Thread t2;
-Thread t3;
 //Main
 int main() {
+
+    pc.printf("Before");
+    pc.printf("%i", test);
+    t1.start(callback(bitcoin_kernel, &test));
+    pc.printf("%i", test);
+    // pc.printf("1");
+    t2.start(motor_speed);
+    pc.printf("2");
+    wait(5);
+    
+    // Thread t3;
 
     //Initialise the serial port
     pc.printf("Welcome to our motor controller\n\r");
@@ -297,21 +244,70 @@ int main() {
     I3.fall(&updateMotor);
 
     //setup timer
-    Ticker t;
-    t.attach(&count, 1.0);
+    // Ticker t;
+    // t.attach(&count, 1.0);
     
     updateMotor();
     // Thread initialisation
-    //std::thread bit_thread (bitcoin_kernel);
-    //std::thread motor_thread (motor_speed);
-    //std::thread command_thread (read_command);
+
     
-    t1.start(bitcoin_kernel);
-    t2.start(motor_speed);
-    t3.start(read_command);
+    while (true){
+        if (pc.readable()){
+            pc.printf("What's next commander?\n");
+            char c = pc.getc();
+            char buffer[32];
+            switch (c) {
+                case 'R':
+                case 'r':
+                    pc.printf("Rotate a number of revolutions\n");
+                    pc.gets(buffer, 7);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    break;
+                case 'V':
+                case 'v':
+                    pc.printf("Set maximum speed\n");
+                    pc.gets(buffer, 7);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    mSpeed_mutex.lock();
+                    mSpeed = atof(buffer);
+                    mSpeed_mutex.unlock();
+                    // pc.printf("%d\n", speed);
+                    break;
+                case 'K':
+                case 'k':
+                    // K[0-9a-f]{16}
+                    pc.printf("Set bitcoin key\n");
+                    pc.gets(buffer, 16);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    if (valid_key(buffer)){
+                        bKey_mutex.lock();
+                        bKey = (int)strtol(buffer, NULL, 16);
+                        bKey_mutex.unlock();
+                        pc.printf("Yay");
+                    } else {
+                        pc.printf("Nay");
+                    }
+                    break;
+                case 'T':
+                case 't':
+                    pc.printf("Set tune\n");
+                    pc.gets(buffer, 16);
+                    pc.printf("%c", c);
+                    pc.printf("%s\n", buffer);
+                    break;
+                default:
+                    pc.printf("Wrong order commander, think again!\n");
+                    break;
+            }
+        }
+    }
+    endT = false;
     t1.join();
     t2.join();
-    t3.join();
+
     
     pc.printf("All threads complete\n\r");
 }
