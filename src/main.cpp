@@ -1,6 +1,9 @@
 #include "mbed.h"
 #include "hash/SHA256.h"
 #include <cctype>
+#include <thread>
+#include <chrono>
+#include <mutex>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -157,6 +160,91 @@ bool check_valid(const char* buff){
     return true;
 }
 
+int mSpeed;
+std::mutex mSpeed_mutex;
+
+int bKey;
+std::mutex bKey_mutex;
+
+bool endT = true; // Shared boolean to end all threads, not sure if need to read
+std::mutex endT_mutex;
+
+void bitcoin_kernel(){
+  while (endT){
+    bKey_mutex.lock();
+    SHA256::computeHash(hash, sequence, 64);
+    pc.printf("Key is:%d\n",bKey);
+    // Release lock
+    bKey_mutex.unlock();
+    //successful nonce
+    if((hash[0] == 0) && (hash[1] == 0)){
+      // pc.printf("Nonce found: %16x\n", *nonce);
+    }
+    *nonce += 1;
+    hash_count++;
+    
+    // 
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+  }
+}
+
+void motor_speed(){
+  while(endT){
+    // Get mutex for speed
+    mSpeed_mutex.lock();
+    // Motor control stuff
+    pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
+    // Release mutex for speed
+    mSpeed_mutex.unlock();
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+  }
+}
+
+bool check_for_input(){
+  return True
+}
+
+void read_command(){
+  while(endT){
+    // Wait for user input - poll serial port to check whether there is an input
+    if (check_for_input()){
+      // Process input
+      if (pc.readable()){
+          pc.printf("What's next commander?");
+          char c = pc.getc();
+          switch (c) {
+              case 'R':
+              case 'r':
+                  pc.printf("Rotate a number of revolutions");
+                  break;
+              case 'V':
+              case 'v':
+                  pc.printf("Set maximum speed");
+                  break;
+              case 'K':
+              case 'k':
+                  pc.printf("Set bitcoin key");
+                  break;
+              case 'T':
+              case 't':
+                  pc.printf("Set tune");
+                  break;
+              default:
+                  pc.printf("Wrong order commander, think again!");
+                  break;
+          }
+      }
+      // Get locks on threadsafe variables and update them
+      
+      
+      // Sleep
+      }
+    }
+      // Sleep and check again later
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+}
+
 //Main
 int main() {
 
@@ -179,49 +267,16 @@ int main() {
     //setup timer
     Ticker t;
     t.attach(&count, 1.0);
-
+    
     updateMotor();
-    while (true) {
-        SHA256::computeHash(hash, sequence, 64);
-        //successful nonce
-        if((hash[0] == 0) && (hash[1] == 0)){
-            // pc.printf("Nonce found: %16x\n", *nonce);
-        }
-        *nonce += 1;
-        hash_count++;
-        
-        if (pc.readable()){
-            pc.printf("What's next commander?");
-            char c = pc.getc();
-            switch (c) {
-                case 'R':
-                case 'r':
-                    pc.printf("Rotate a number of revolutions");
-                    break;
-                case 'V':
-                case 'v':
-                    pc.printf("Set maximum speed");
-                    break;
-                case 'K':
-                case 'k':
-                    pc.printf("Set bitcoin key");
-                    break;
-                case 'T':
-                case 't':
-                    pc.printf("Set tune");
-                    break;
-                default:
-                    pc.printf("Wrong order commander, think again!");
-                    break;
-            }
-            // if (check_valid(buffer)){
-            //     pc.printf("I got '%s'\n", buffer);
-            //     int i  = atoi(buffer);
-            // }
-            // else {
-            //     pc.printf("You didn't enter a number!");
-            // }
-        }
-        
-    }
+    // Thread initialisation
+    std::thread bit_thread (bitcoin_kernel);
+    std::thread motor_thread (motor_speed);
+    std::thread command_thread (read_command);
+    
+    bit_thread.join();
+    motor_thead.join();
+    command_thread.join();
+    
+    pc.printf("All threads complete\n\r");
 }
