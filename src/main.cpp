@@ -60,11 +60,15 @@ DigitalOut L2H(L2Hpin);
 DigitalOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
+//Encoder
+InterruptIn channelA(CHA);
+InterruptIn channelB(CHB);
+
 //Serial port
 Serial pc(SERIAL_TX, SERIAL_RX);
 
 //Bitcoin initialisation
-uint8_t sequence[] = {   
+uint8_t sequence[] = {
                         0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64,
                         0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73,
                         0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E,
@@ -80,6 +84,7 @@ uint64_t* nonce = (uint64_t*)((int)sequence + 56);
 uint8_t hash[32];
 uint32_t hash_count = 0;
 uint32_t speed;
+int32_t encoder_state = 0;
 
 //Set a given drive state
 void motorOut(int8_t driveState){
@@ -124,6 +129,27 @@ void updateMotor(){
     motorOut((intState - orState + lead + 6) % 6); //+6 to make sure the remainder is positive
 }
 
+void updateEncoder(){
+    static int32_t last_state = 0;
+
+    int a = channelA.read();
+    int b = channelB.read();
+
+    int current_state = (a << 1) | b;
+    int change;
+
+    //check only one thing has changed
+    if(((current_state ^ last_state) != 0x3) && (current_state != last_state)){
+        change = last_state ^ (current_state >> 1); // 0 = cw; 1 = ccw;
+
+        if(change == 0) change = -1;
+
+        encoder_state += change;
+    }
+
+    last_state = current_state;
+}
+
 //temporarily inline to speed up
 inline void count_speed(){
     pc.printf("Speed: %d Revolutions/s\n", speed);
@@ -144,6 +170,7 @@ void I1_updateMotor(){
     t.stop();
     speed = 1.0 / t.read();
     t.reset();
+    encoder_state = 0;
     t.start();
     updateMotor();
 }
@@ -271,7 +298,6 @@ void read_command(){
     }
       // Sleep and check again later
     Thread::wait(2000);
-  
 }
 
 Thread t1;
@@ -282,7 +308,6 @@ int main() {
 
     //Initialise the serial port
     pc.printf("Welcome to our motor controller\n\r");
-    
     //Run the motor synchronisation
     orState = motorHome();
     pc.printf("Rotor origin: %x\n\r",orState);
@@ -296,22 +321,28 @@ int main() {
     I3.rise(&updateMotor);
     I3.fall(&updateMotor);
 
+    channelA.rise(&updateEncoder);
+    channelB.rise(&updateEncoder);
+    channelA.fall(&updateEncoder);
+    channelB.fall(&updateEncoder);
+
     //setup timer
     Ticker t;
     t.attach(&count, 1.0);
-    
+
     updateMotor();
+    while(1){}
     // Thread initialisation
     //std::thread bit_thread (bitcoin_kernel);
     //std::thread motor_thread (motor_speed);
     //std::thread command_thread (read_command);
-    
-    t1.start(bitcoin_kernel);
-    t2.start(motor_speed);
-    t3.start(read_command);
-    t1.join();
-    t2.join();
-    t3.join();
-    
+
+    // t1.start(bitcoin_kernel);
+    // t2.start(motor_speed);
+    // t3.start(read_command);
+    // t1.join();
+    // t2.join();
+    // t3.join();
+
     pc.printf("All threads complete\n\r");
 }
