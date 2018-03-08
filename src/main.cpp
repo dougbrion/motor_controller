@@ -64,8 +64,34 @@ DigitalOut L3H(L3Hpin);
 InterruptIn channelA(CHA);
 InterruptIn channelB(CHB);
 
-//Serial port
-Serial pc(SERIAL_TX, SERIAL_RX);
+// ---------- ENUMS ----------
+enum printCodes{
+    MSG,
+    NEW_KEY,
+    NEW_SPEED,
+    NEW_TUNE,
+    NEW_ROTATION,
+    ROTOR_ORIGIN,
+    NONCE_FOUND
+};
+
+enum msg_types{
+    YAY,
+    NAY,
+    WRONG_ORDER,
+    WHATS_NEXT
+};
+
+// ---------- SERIAL VARIABLES ----------
+RawSerial pc(SERIAL_TX, SERIAL_RX);
+
+typedef struct{
+    printCodes code;
+    uint64_t data;
+ } message_t;
+
+Mail<message_t,16> outMessages;
+Queue<void, 8> charBuffer;
 
 // ---------- BITCOIN VARIABLES ----------
 uint8_t sequence[] = {
@@ -82,27 +108,32 @@ uint8_t sequence[] = {
 volatile uint64_t* key = (uint64_t*)((int)sequence + 48);
 volatile uint64_t* nonce = (uint64_t*)((int)sequence + 56);
 uint8_t hash[32];
+
 uint32_t hash_count = 0;
+
+volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
 uint32_t speed;
+
 int32_t encoder_state = 0;
 
 
 // ---------- THREADING VARIABLES ----------
-Thread t1;
-Thread t2;
+Thread serialPrint_th;
+Thread decodeCommands_th;
 
-int mSpeed;
-Mutex mSpeed_mutex;
-
-int bKey = 0;
-Mutex bKey_mutex;
-
-volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
-Mutex endT_mutex;
-
-volatile int test = 0;
+Mutex newKey_mutex;
+// int mSpeed;
+// Mutex mSpeed_mutex;
+//
+// int bKey = 0;
+// Mutex bKey_mutex;
+//
+// volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
+// Mutex endT_mutex;
+//
+// volatile int test = 0;
 
 // ------------- FUNCTIONS -------------
 //Set a given drive state
@@ -126,12 +157,12 @@ void motorOut(int8_t driveState){
     if (driveOut & 0x08) L2H = 0;
     if (driveOut & 0x10) L3L = 1;
     if (driveOut & 0x20) L3H = 0;
-    }
+}
 
-    //Convert photointerrupter inputs to a rotor state
+//Convert photointerrupter inputs to a rotor state
 inline int8_t readRotorState(){
     return stateMap[I1 + 2*I2 + 4*I3];
-    }
+}
 
 //Basic synchronisation routine
 int8_t motorHome() {
@@ -194,43 +225,38 @@ void I1_updateMotor(){
     updateMotor();
 }
 
-bool valid_key(const char* buff){
-    bool valid = false;
-    const int string_len = strlen(buff);
-    for (int i = 0; i < string_len; ++i){
-        if (buff[i] > 47 && buff[i] < 58){
-            // 0-9
-            valid = true;
-        } else if (buff[i] > 64 && buff[i] < 71){
-            // A-F
-            valid = true;
-        } else if (buff[i] > 96 && buff[i] < 103){
-            // a-f
-            valid = true;
-        } else {
-            return false;
-        }
-    }
-    return valid;
-}
-
-void bitcoin_kernel(){
-    // while (endT){
-        // bKey_mutex.lock();
-        // SHA256::computeHash(hash, sequence, 64);
-        // // pc.printf("Key is:%d\n",bKey);
-        // // Release lock
-        // // bKey_mutex.unlock();
-        // //successful nonce
-        // if((hash[0] == 0) && (hash[1] == 0)){
-        //     // pc.printf("Nonce found: %16x\n", *nonce);
-        // }
-        // *nonce += 1;
-        // hash_count++;
-        //pc.printf("Test print from thread");
-        // wait(1.0);
-    // }
-}
+// checks if key is valid and updates
+//TODO: update to work with int
+// void valid_key(uint64_t key){
+//     bool valid = false;
+//     const int string_len = strlen(buff);
+//     for (int i = 0; i < string_len; ++i){
+//         if (buff[i] > 47 && buff[i] < 58){
+//             // 0-9
+//             valid = true;
+//         } else if (buff[i] > 64 && buff[i] < 71){
+//             // A-F
+//             valid = true;
+//         } else if (buff[i] > 96 && buff[i] < 103){
+//             // a-f
+//             valid = true;
+//         } else {
+//             valid = false;
+//             break;
+//         }
+//     }
+//     if (valid){
+//         newKey_mutex.lock();
+//
+//         newKey = key;
+//         queueMessage(MSG, uint64_t(YAY));
+//         queueMessage(NEW_KEY, newKey);
+//
+//         newKey_mutex.unlock();
+//     } else {
+//         queueMessage(MSG, uint64_t(NAY));
+//     }
+// }
 
 void motor_speed(){
   while(true){
@@ -245,16 +271,141 @@ void motor_speed(){
   }
 }
 
+// Checks message queue and prints
+void serialPrint(){
+    while(1) {
+        osEvent newEvent = outMessages.get();
+        message_t *pMessage = (message_t*)newEvent.value.p;
+
+        switch(pMessage->code){
+            case MSG:{
+                switch(static_cast<msg_types>(pMessage->data)){
+                    case YAY:
+                        pc.printf("Nay!\n");
+                        break;
+                    case NAY:
+                        pc.printf("Nay!\n");
+                        break;
+                    case WRONG_ORDER:
+                        pc.printf("Wrong order commander, think again!\n");
+                        break;
+                    case WHATS_NEXT:
+                        pc.printf("What's next commander?\n");
+                        break;
+                }
+            }
+
+            case NEW_KEY:
+                pc.printf("Setting bitcoin key to 0x%016x\n", pMessage->data);
+                break;
+            case NEW_SPEED:
+                pc.printf("Setting maximum speed to 0x%016x\n", pMessage->data);
+                break;
+            case NEW_TUNE:
+                pc.printf("Queuing sea shanty 0x%016x\n", pMessage->data);
+                break;
+            case NEW_ROTATION:
+                pc.printf("Rotating 0x%016x\n revolutions\n", pMessage->data);
+                break;
+            case ROTOR_ORIGIN:
+                pc.printf("Rotor origin at 0x%016x\n\n", pMessage->data);
+                break;
+            case NONCE_FOUND:
+                pc.printf("We've found ourselves a nonce! 0x%016x\n\n", pMessage->data);
+                break;
+        }
+
+        outMessages.free(pMessage);
+    }
+}
+
+// Queues a message to be printed later
+void queueMessage(printCodes code, uint64_t data){
+    message_t *pMessage = outMessages.alloc();
+    pMessage->code = code;
+    pMessage->data = data;
+    outMessages.put(pMessage);
+}
+
+// When serial input interrupt is triggered -> places char into buffer to be processed later
+void serialISR(){
+    uint8_t newChar = pc.getc();
+    charBuffer.put((void*)newChar);
+}
+
+// decodes commands in the char buffer
+void decodeCommands(){
+    pc.attach(&serialISR);
+    char command[32];
+    int index = 0;
+    while(true){
+        osEvent newEvent = charBuffer.get();
+        uint8_t newChar = (uint8_t)newEvent.value.p;
+
+        if(newChar != '\r'){
+            command[index] = newChar;
+            index++;
+        }
+        else{
+            command[index] = '\0';
+            index = 0;
+
+            uint64_t tmp;
+
+            switch(command[0]) {
+                //TODO: set number of rotations
+                case 'R':
+                    sscanf(command, "R%10llx", &tmp);
+                    queueMessage(NEW_ROTATION, tmp);
+                    break;
+                case 'r':
+                    sscanf(command, "r%10llx", &tmp);
+                    queueMessage(NEW_ROTATION, tmp);
+                    break;
+
+                //TODO: set speed
+                case 'V':
+                    sscanf(command, "V%10llx", &tmp);
+                    queueMessage(NEW_SPEED, tmp);
+                    break;
+                case 'v':
+                    sscanf(command, "v%10llx", &tmp);
+                    queueMessage(NEW_SPEED, tmp);
+                    break;
+
+                // K[0-9a-f]{16}
+                case 'K':
+                    sscanf(command, "K%10llx", &tmp);
+                    //valid_key(tmp);
+                    break;
+                case 'k':
+
+                    sscanf(command, "k%10llx", &tmp);
+                    //valid_key(tmp);
+                    break;
+
+                //TODO: set tune
+                case 'T':
+                case 't':
+                    queueMessage(NEW_TUNE, 0);
+                    break;
+
+                default:
+                    queueMessage(MSG, uint64_t(WRONG_ORDER));
+                    break;
+            }
+            queueMessage(MSG, uint64_t(WHATS_NEXT));
+        }
+    }
+}
+
 int main() {
 
-    //Initialise the serial port
-    pc.printf("Welcome to our motor controller\n\r");
     //Run the motor synchronisation
     orState = motorHome();
-    pc.printf("Rotor origin: %x\n\r",orState);
-    //orState is subtracted from future rotor state inputs to align rotor and motor states
+    queueMessage(ROTOR_ORIGIN, uint64_t(orState));
 
-    //set interrupts
+    //set photointerrupter interrupts
     I1.rise(&I1_updateMotor);
     I1.fall(&updateMotor);
     I2.rise(&updateMotor);
@@ -262,6 +413,7 @@ int main() {
     I3.rise(&updateMotor);
     I3.fall(&updateMotor);
 
+    //set encoder interrupts
     channelA.rise(&updateEncoder);
     channelB.rise(&updateEncoder);
     channelA.fall(&updateEncoder);
@@ -271,67 +423,24 @@ int main() {
     // Ticker t;
     // t.attach(&count, 1.0);
 
-    pc.printf("Before\n");
-    pc.printf("%i", test);
-    t1.start(&bitcoin_kernel);
-    pc.printf("%i", test);
-    // pc.printf("1");
-    t2.start(&motor_speed);
-    pc.printf("2");
-    wait(5);
+    //set up threads
+    serialPrint_th.start(&serialPrint);
+    decodeCommands_th.start(&decodeCommands);
 
     updateMotor();
-    while (true){
-        if (pc.readable()){
-            pc.printf("What's next commander?\n");
-            char c = pc.getc();
-            char buffer[32];
-            switch (c) {
-                case 'R':
-                case 'r':
-                    pc.printf("Rotate a number of revolutions\n");
-                    pc.gets(buffer, 7);
-                    pc.printf("%c", c);
-                    pc.printf("%s\n", buffer);
-                    break;
-                case 'V':
-                case 'v':
-                    pc.printf("Set maximum speed\n");
-                    pc.gets(buffer, 7);
-                    pc.printf("%c", c);
-                    pc.printf("%s\n", buffer);
-                    mSpeed_mutex.lock();
-                    mSpeed = atof(buffer);
-                    mSpeed_mutex.unlock();
-                    // pc.printf("%d\n", speed);
-                    break;
-                case 'K':
-                case 'k':
-                    // K[0-9a-f]{16}
-                    pc.printf("Set bitcoin key\n");
-                    pc.gets(buffer, 16);
-                    pc.printf("%c", c);
-                    pc.printf("%s\n", buffer);
-                    if (valid_key(buffer)){
-                        bKey_mutex.lock();
-                        bKey = (int)strtol(buffer, NULL, 16);
-                        bKey_mutex.unlock();
-                        pc.printf("Yay");
-                    } else {
-                        pc.printf("Nay");
-                    }
-                    break;
-                case 'T':
-                case 't':
-                    pc.printf("Set tune\n");
-                    pc.gets(buffer, 16);
-                    pc.printf("%c", c);
-                    pc.printf("%s\n", buffer);
-                    break;
-                default:
-                    pc.printf("Wrong order commander, think again!\n");
-                    break;
-            }
+    while(true){
+        //copy new key across
+        newKey_mutex.lock();
+        *key = newKey;
+        newKey_mutex.unlock();
+
+        SHA256::computeHash(hash, sequence, 64);
+
+        //successful nonce
+        if((hash[0] == 0) && (hash[1] == 0)){
+            queueMessage(NONCE_FOUND, *nonce);
         }
+        *nonce += 1;
+        hash_count++;
     }
 }
