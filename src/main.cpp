@@ -85,6 +85,7 @@ enum msg_types{
 // ---------- SERIAL VARIABLES ----------
 RawSerial pc(SERIAL_TX, SERIAL_RX);
 
+//TODO: change data to 32 bits and put two messages on the queue for the key
 typedef struct{
     printCodes code;
     uint64_t data;
