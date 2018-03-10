@@ -38,7 +38,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 
 //Phase lead to make motor spin
 const int8_t lead = 2;  //2 for forwards, -2 for backwards
-
+const int PWM_PERIOD = 256;
 //Status LED
 DigitalOut led1(LED1);
 
@@ -48,11 +48,11 @@ DigitalIn I2(I2pin);
 DigitalIn I3(I3pin);
 
 //Motor Drive outputs
-DigitalOut L1L(L1Lpin);
+PwmOut L1L(L1Lpin);
 DigitalOut L1H(L1Hpin);
-DigitalOut L2L(L2Lpin);
+PwmOut L2L(L2Lpin);
 DigitalOut L2H(L2Hpin);
-DigitalOut L3L(L3Lpin);
+PwmOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
 //Set a given drive state
@@ -62,19 +62,19 @@ void motorOut(int8_t driveState){
     int8_t driveOut = driveTable[driveState & 0x07];
 
     //Turn off first
-    if (~driveOut & 0x01) L1L = 0;
+    if (~driveOut & 0x01) L1L.write(0);
     if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L2L = 0;
+    if (~driveOut & 0x04) L2L.write(0);
     if (~driveOut & 0x08) L2H = 1;
-    if (~driveOut & 0x10) L3L = 0;
+    if (~driveOut & 0x10) L3L.write(0);
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-    if (driveOut & 0x01) L1L = 1;
+    if (driveOut & 0x01) L1L.write(1);
     if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04) L2L = 1;
+    if (driveOut & 0x04) L2L.write(1);
     if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L = 1;
+    if (driveOut & 0x10) L3L.write(1);
     if (driveOut & 0x20) L3H = 0;
     }
 
@@ -98,7 +98,9 @@ int main() {
     int8_t orState = 0;    //Rotot offset at motor state 0
     int8_t intState = 0;
     int8_t intStateOld = 0;
-
+    L1L.period_us(PWM_PERIOD);
+    L2L.period_us(PWM_PERIOD);
+    L3L.period_us(PWM_PERIOD);
     //Initialise the serial port
     Serial pc(SERIAL_TX, SERIAL_RX);
     pc.printf("Hello\n\r");
