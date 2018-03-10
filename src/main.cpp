@@ -124,7 +124,7 @@ int32_t velocity = 0;
 int16_t velocity_count = 0;
 int32_t encoder_state = 0;
 
-uint32_t cmd_torque;
+uint32_t cmd_torque = PWM_PERIOD;
 
 
 // ---------- THREADING VARIABLES ----------
@@ -152,19 +152,19 @@ void motorOut(int8_t driveState, uint32_t pulseWidth){
     int8_t driveOut = driveTable[driveState & 0x07];
     
     //Turn off first
-    if (~driveOut & 0x01) L1L.PwmOut::pulsewidth_us(0);
+    if (~driveOut & 0x01) L1L.pulsewidth_us(0);
     if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L1L.PwmOut::pulsewidth_us(0);
+    if (~driveOut & 0x04) L1L.pulsewidth_us(0);
     if (~driveOut & 0x08) L2H = 1;
-    if (~driveOut & 0x10) L3L.PwmOut::pulsewidth_us(0);
+    if (~driveOut & 0x10) L3L.pulsewidth_us(0);
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-    if (driveOut & 0x01) L1L.PwmOut::pulsewidth_us(pulseWidth);
+    if (driveOut & 0x01) L1L.pulsewidth_us(pulseWidth);
     if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04) L2L.PwmOut::pulsewidth_us(pulseWidth);
+    if (driveOut & 0x04) L2L.pulsewidth_us(pulseWidth);
     if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L.PwmOut::pulsewidth_us(pulseWidth);
+    if (driveOut & 0x10) L3L.pulsewidth_us(pulseWidth);
     if (driveOut & 0x20) L3H = 0;
 }
 
@@ -385,7 +385,7 @@ void decodeCommands(){
                 //TODO: set tune
                 case 'T':
                 case 't':
-                    sscanf(command, "t%10llx", &cmd_torque);
+                    sscanf(command, "t%lx", &cmd_torque);
                     queueMessage(MSG, cmd_torque);
                     //queueMessage(NEW_TUNE, 0);
                     break;
@@ -399,6 +399,7 @@ void decodeCommands(){
     }
 }
 
+/*
 void signalVelocity(){
   velocityCalc_th.signal_set(0x1);//velSig = 1;
 }
@@ -420,9 +421,8 @@ void velocityCalc(){
     }
     velocityCalc_th.signal_set(0);
   }
-  return;
 }
-
+*/
 int main() {
 
     //Run the motor synchronisation
@@ -430,9 +430,9 @@ int main() {
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
     
     // Initialisation PWM period
-    L1L.PwmOut::period_us(PWM_PERIOD);
-    L2L.PwmOut::period_us(PWM_PERIOD);
-    L3L.PwmOut::period_us(PWM_PERIOD);
+    L1L.period_us(PWM_PERIOD);
+    L2L.period_us(PWM_PERIOD);
+    L3L.period_us(PWM_PERIOD);
     //set photointerrupter interrupts
     I1.rise(&updateMotor);
     I1.fall(&updateMotor);
@@ -456,9 +456,9 @@ int main() {
     decodeCommands_th.start(&decodeCommands);
     
     // Velocity calculation thread
-    velocityCalc_th.start(&velocityCalc);
-    Ticker t;
-    t.attach(&signalVelocity, 0.1); // 100ms
+    // velocityCalc_th.start(&velocityCalc);
+    // Ticker t;
+    // t.attach(&signalVelocity, 0.1); // 100ms
     
     updateMotor();
     while(true){
