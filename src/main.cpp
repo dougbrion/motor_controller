@@ -53,11 +53,11 @@ InterruptIn I2(I2pin);
 InterruptIn I3(I3pin);
 
 //Motor Drive outputs
-PwmOut L1L(L1Lpin);
+DigitalOut L1L(L1Lpin);
 DigitalOut L1H(L1Hpin);
-PwmOut L2L(L2Lpin);
+DigitalOut L2L(L2Lpin);
 DigitalOut L2H(L2Hpin);
-PwmOut L3L(L3Lpin);
+DigitalOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
 const int PWM_PERIOD=256; // us
@@ -152,19 +152,19 @@ void motorOut(int8_t driveState, uint32_t pulseWidth){
     int8_t driveOut = driveTable[driveState & 0x07];
     
     //Turn off first
-    if (~driveOut & 0x01) L1L.pulsewidth_us(0);
+    if (~driveOut & 0x01) L1L = 0;
     if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L1L.pulsewidth_us(0);
+    if (~driveOut & 0x04) L1L = 0;
     if (~driveOut & 0x08) L2H = 1;
-    if (~driveOut & 0x10) L3L.pulsewidth_us(0);
+    if (~driveOut & 0x10) L3L = 0;
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-    if (driveOut & 0x01) L1L.pulsewidth_us(pulseWidth);
+    if (driveOut & 0x01) L1L = 1;
     if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04) L2L.pulsewidth_us(pulseWidth);
+    if (driveOut & 0x04) L2L = 1;
     if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L.pulsewidth_us(pulseWidth);
+    if (driveOut & 0x10) L3L = 1;
     if (driveOut & 0x20) L3H = 0;
 }
 
@@ -429,10 +429,6 @@ int main() {
     orState = motorHome();
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
     
-    // Initialisation PWM period
-    L1L.period_us(PWM_PERIOD);
-    L2L.period_us(PWM_PERIOD);
-    L3L.period_us(PWM_PERIOD);
     //set photointerrupter interrupts
     I1.rise(&updateMotor);
     I1.fall(&updateMotor);
