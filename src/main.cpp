@@ -53,12 +53,14 @@ InterruptIn I2(I2pin);
 InterruptIn I3(I3pin);
 
 //Motor Drive outputs
-DigitalOut L1L(L1Lpin);
+PwmOut L1L(L1Lpin);
 DigitalOut L1H(L1Hpin);
-DigitalOut L2L(L2Lpin);
+PwmOut L2L(L2Lpin);
 DigitalOut L2H(L2Hpin);
-DigitalOut L3L(L3Lpin);
+PwmOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
+
+const int PWM_PERIOD=256; // us
 
 //Encoder
 InterruptIn channelA(CHA);
@@ -115,14 +117,15 @@ uint32_t hash_count = 0;
 volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
-uint32_t speed;
-
+int32_t velocity = 0;
+int16_t velocity_count = 0;
 int32_t encoder_state = 0;
 
 
 // ---------- THREADING VARIABLES ----------
 Thread serialPrint_th;
 Thread decodeCommands_th;
+Thread velocityCalc_th;
 
 Mutex newKey_mutex;
 // int mSpeed;
@@ -138,25 +141,25 @@ Mutex newKey_mutex;
 
 // ------------- FUNCTIONS -------------
 //Set a given drive state
-void motorOut(int8_t driveState){
+void motorOut(int8_t driveState, uint32_t pulseWidth){
 
     //Lookup the output byte from the drive state.
     int8_t driveOut = driveTable[driveState & 0x07];
-
+    
     //Turn off first
-    if (~driveOut & 0x01) L1L = 0;
+    if (~driveOut & 0x01) L1L.PwmOut::pulsewidth_us(0);
     if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L2L = 0;
+    if (~driveOut & 0x04) L1L.PwmOut::pulsewidth_us(0);
     if (~driveOut & 0x08) L2H = 1;
-    if (~driveOut & 0x10) L3L = 0;
+    if (~driveOut & 0x10) L3L.PwmOut::pulsewidth_us(0);
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-    if (driveOut & 0x01) L1L = 1;
+    if (driveOut & 0x01) L1L.PwmOut::pulsewidth_us(pulseWidth);
     if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04) L2L = 1;
+    if (driveOut & 0x04) L2L.PwmOut::pulsewidth_us(pulseWidth);
     if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L = 1;
+    if (driveOut & 0x10) L3L.PwmOut::pulsewidth_us(pulseWidth);
     if (driveOut & 0x20) L3H = 0;
 }
 
@@ -168,7 +171,7 @@ inline int8_t readRotorState(){
 //Basic synchronisation routine
 int8_t motorHome() {
     //Put the motor in drive state 0 and wait for it to stabilise
-    motorOut(0);
+    motorOut(0,PWM_PERIOD); // Set to 100% pwm
     wait(1.0);
 
     //Get the rotor state
@@ -176,7 +179,15 @@ int8_t motorHome() {
 }
 
 void updateMotor(){
+    static int8_t last_state = 0;
     int8_t intState = readRotorState();
+    // Compare with last_state
+    if (!(intState==7&&last_state==0)&&((intState==0&&last_state==7) || intState>last_state)){
+        velocity_count++;
+    } else if ((intState==7&&last_state==0)||intState<last_state){
+        velocity_count--;
+    }
+    last_state = intState;
     motorOut((intState - orState + lead + 6) % 6); //+6 to make sure the remainder is positive
 }
 
@@ -199,31 +210,6 @@ void updateEncoder(){
     }
 
     last_state = current_state;
-}
-
-//temporarily inline to speed up
-inline void count_speed(){
-    pc.printf("Speed: %d Revolutions/s\n\r", speed);
-}
-
-void count_hash(){
-    pc.printf("Current Hash Rate: %dH/s\n\r", hash_count);
-    hash_count = 0;
-}
-
-void count(){
-    count_hash();
-    count_speed();
-}
-
-void I1_updateMotor(){
-    static Timer t;
-    t.stop();
-    speed = 1.0 / t.read();
-    t.reset();
-    encoder_state = 0;
-    t.start();
-    updateMotor();
 }
 
 // checks if key is valid and updates
@@ -400,14 +386,42 @@ void decodeCommands(){
     }
 }
 
+void signalVelocity(){
+  velocityCalc_th.signal_set(0x1);//velSig = 1;
+}
+
+void velocityCalc(){
+  static uint8_t iter = 0;
+  
+  while (true){
+    // Wait until signal from signalVelocity
+    velocityCalc_th.signal_wait(0x1);
+    iter++;
+    // velocity_count
+    velocity = (velocity_count*10)/6;
+    velocity_count = 0;
+    if (iter==10){
+      // Print velocity
+      // queueMessage();
+      iter = 0;
+    }
+    velocityCalc_th.signal_set(0);
+  }
+  return;
+}
+
 int main() {
 
     //Run the motor synchronisation
     orState = motorHome();
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
-
+    
+    // Initialisation PWM period
+    L1L.PwmOut::period_us(PWM_PERIOD);
+    L2L.PwmOut::period_us(PWM_PERIOD);
+    L3L.PwmOut::period_us(PWM_PERIOD);
     //set photointerrupter interrupts
-    I1.rise(&I1_updateMotor);
+    I1.rise(&updateMotor);
     I1.fall(&updateMotor);
     I2.rise(&updateMotor);
     I2.fall(&updateMotor);
@@ -427,7 +441,12 @@ int main() {
     //set up threads
     serialPrint_th.start(&serialPrint);
     decodeCommands_th.start(&decodeCommands);
-
+    
+    // Velocity calculation thread
+    velocityCalc_th.start(&velocityCalc);
+    Ticker t;
+    t.attach(&signalVelocity, 0.1); // 100ms
+    
     updateMotor();
     while(true){
         //copy new key across
