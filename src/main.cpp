@@ -121,16 +121,19 @@ volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
 int32_t velocity = 0;
+int32_t target_velocity = 50;
 int16_t velocity_count = 0;
 int32_t encoder_state = 0;
 
 uint32_t cmd_torque = PWM_PERIOD;
+uint32_t K_P = 20;
+uint32_t K_D = 20;
 
 
 // ---------- THREADING VARIABLES ----------
-Thread serialPrint_th(osPriorityNormal,800);
-Thread decodeCommands_th(osPriorityNormal,800);
-Thread velocityCalc_th(osPriorityNormal,800);
+Thread serialPrint_th(osPriorityNormal,1000);
+Thread decodeCommands_th(osPriorityNormal,1000);
+Thread velocityCalc_th(osPriorityNormal,1000);
 
 Mutex newKey_mutex;
 
@@ -343,7 +346,6 @@ void decodeCommands(){
 
                 // K[0-9a-f]{16}
                 case 'k':
-
                     sscanf(command, "k%10llx", &tmp);
                     //valid_key(tmp);
                     break;
@@ -372,6 +374,10 @@ Timer t;
 void velocityCalc(){
   static uint8_t iter = 0;
   float local_vc = 0;
+  float time_passed = 1;
+  float old_error = 0;
+  float error = 0;
+  float diff_term = 0;
   while (true){
     // Wait until signal from signalVelocity
     velocityCalc_th.signal_wait(0x1);
@@ -383,9 +389,18 @@ void velocityCalc(){
     local_vc = float(velocity_count);
     velocity_count = 0;
     __enable_irq();
-    velocity = uint16_t((local_vc/t.read())/6.0);
+    time_passed = t.read();
+    velocity = (local_vc * 10/ 6);
     t.reset();
     t.start();
+
+    // set torque equal to baseline + P loop
+    error = target_velocity - velocity;
+    diff_term = (error - old_error) / time_passed;
+    //cmd_torque = 128 + (K_P * error) + (K_D * diff_term);
+
+    old_error = error;
+
     if (iter==10){
       // Print velocity
       queueMessage(MSG, uint64_t(VELOCITY));
