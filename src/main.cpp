@@ -150,11 +150,11 @@ void motorOut(int8_t driveState, uint32_t pulseWidth){
 
     //Lookup the output byte from the drive state.
     int8_t driveOut = driveTable[driveState & 0x07];
-    
+
     //Turn off first
     if (~driveOut & 0x01) L1L.pulsewidth_us(0);
     if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L1L.pulsewidth_us(0);
+    if (~driveOut & 0x04) L2L.pulsewidth_us(0);
     if (~driveOut & 0x08) L2H = 1;
     if (~driveOut & 0x10) L3L.pulsewidth_us(0);
     if (~driveOut & 0x20) L3H = 1;
@@ -372,8 +372,8 @@ void decodeCommands(){
                 //TODO: set tune
                 case 'T':
                 case 't':
-                    sscanf(command, "t%lx", &cmd_torque);
-                    queueMessage(MSG, cmd_torque);
+                    sscanf(command, "t%i", &cmd_torque);
+                    queueMessage(MSG, uint64_t(TORQUE));
                     //queueMessage(NEW_TUNE, 0);
                     break;
 
@@ -393,7 +393,7 @@ void signalVelocity(){
 
 void velocityCalc(){
   static uint8_t iter = 0;
-  
+
   while (true){
     // Wait until signal from signalVelocity
     velocityCalc_th.signal_wait(0x1);
@@ -415,7 +415,7 @@ int main() {
     //Run the motor synchronisation
     orState = motorHome();
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
-    
+
     // Initialisation PWM period
     L1L.period_us(PWM_PERIOD);
     L2L.period_us(PWM_PERIOD);
@@ -441,12 +441,12 @@ int main() {
     //set up threads
     serialPrint_th.start(&serialPrint);
     decodeCommands_th.start(&decodeCommands);
-    
+
     // Velocity calculation thread
     // velocityCalc_th.start(&velocityCalc);
     // Ticker t;
     // t.attach(&signalVelocity, 0.1); // 100ms
-    
+
     updateMotor();
     while(true){
         //copy new key across
