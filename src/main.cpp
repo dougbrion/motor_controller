@@ -1,7 +1,7 @@
 #include "mbed.h"
 #include "rtos.h"
 #include "hash/SHA256.h"
-// #include <stdlib.h>
+#include <stdlib.h>
 
 //Photointerrupter input pins
 #define I1pin D2
