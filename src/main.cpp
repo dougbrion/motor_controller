@@ -131,10 +131,6 @@ int main() {
 
     //Poll the rotor state and set the motor outputs accordingly to spin the motor
     while (1) {
-        intState = readRotorState();
-        if (intState != intStateOld) {
-            intStateOld = intState;
-            motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
-        }
+        
     }
 }
