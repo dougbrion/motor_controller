@@ -128,21 +128,12 @@ uint32_t cmd_torque = PWM_PERIOD;
 
 
 // ---------- THREADING VARIABLES ----------
-Thread serialPrint_th(osPriorityNormal,1000);
-Thread decodeCommands_th(osPriorityNormal,1000);
-Thread velocityCalc_th(osPriorityNormal,200);
+Thread serialPrint_th(osPriorityNormal,800);
+Thread decodeCommands_th(osPriorityNormal,800);
+Thread velocityCalc_th(osPriorityNormal,800);
 
 Mutex newKey_mutex;
-// int mSpeed;
-// Mutex mSpeed_mutex;
-//
-// int bKey = 0;
-// Mutex bKey_mutex;
-//
-// volatile bool endT = true; // Shared boolean to end all threads, not sure if need to read
-// Mutex endT_mutex;
-//
-// volatile int test = 0;
+
 
 // ------------- FUNCTIONS -------------
 //Set a given drive state
@@ -339,30 +330,18 @@ void decodeCommands(){
 
             switch(command[0]) {
                 //TODO: set number of rotations
-                case 'R':
-                    sscanf(command, "R%10llx", &tmp);
-                    queueMessage(NEW_ROTATION, tmp);
-                    break;
                 case 'r':
                     sscanf(command, "r%10llx", &tmp);
                     queueMessage(NEW_ROTATION, tmp);
                     break;
 
                 //TODO: set speed
-                case 'V':
-                    sscanf(command, "V%10llx", &tmp);
-                    queueMessage(NEW_SPEED, tmp);
-                    break;
                 case 'v':
                     sscanf(command, "v%10llx", &tmp);
                     queueMessage(NEW_SPEED, tmp);
                     break;
 
                 // K[0-9a-f]{16}
-                case 'K':
-                    sscanf(command, "K%10llx", &tmp);
-                    //valid_key(tmp);
-                    break;
                 case 'k':
 
                     sscanf(command, "k%10llx", &tmp);
@@ -370,7 +349,6 @@ void decodeCommands(){
                     break;
 
                 //TODO: set tune
-                case 'T':
                 case 't':
                     sscanf(command, "t%i", &cmd_torque);
                     queueMessage(MSG, uint64_t(TORQUE));
@@ -393,7 +371,7 @@ void signalVelocity(){
 Timer t;
 void velocityCalc(){
   static uint8_t iter = 0;
-  int16_t local_vc = 0;
+  float local_vc = 0;
   while (true){
     // Wait until signal from signalVelocity
     velocityCalc_th.signal_wait(0x1);
@@ -402,10 +380,10 @@ void velocityCalc(){
     //local variable.
     t.stop();
     __disable_irq();
-    local_vc = velocity_count;
+    local_vc = float(velocity_count);
     velocity_count = 0;
     __enable_irq();
-    velocity = (local_vc/t.read())/6;
+    velocity = uint16_t((local_vc/t.read())/6.0);
     t.reset();
     t.start();
     if (iter==10){
