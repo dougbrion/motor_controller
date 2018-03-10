@@ -390,17 +390,24 @@ void decodeCommands(){
 void signalVelocity(){
   velocityCalc_th.signal_set(0x1);//velSig = 1;
 }
-
+Timer t;
 void velocityCalc(){
   static uint8_t iter = 0;
-
+  int16_t local_vc = 0;
   while (true){
     // Wait until signal from signalVelocity
     velocityCalc_th.signal_wait(0x1);
     iter++;
-    // velocity_count
-    velocity = (velocity_count*10)/6;
+    //Interrupts should be disabled in a critical section while the position is copied into a
+    //local variable.
+    t.stop();
+    __disable_irq();
+    local_vc = velocity_count;
     velocity_count = 0;
+    __enable_irq();
+    velocity = (local_vc/t.read())/6;
+    t.reset();
+    t.start();
     if (iter==10){
       // Print velocity
       queueMessage(MSG, uint64_t(VELOCITY));
