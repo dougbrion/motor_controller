@@ -203,11 +203,11 @@ void updateEncoder(){
 
 //temporarily inline to speed up
 inline void count_speed(){
-    pc.printf("Speed: %d Revolutions/s\n", speed);
+    pc.printf("Speed: %d Revolutions/s\n\r", speed);
 }
 
 void count_hash(){
-    pc.printf("Current Hash Rate: %dH/s\n", hash_count);
+    pc.printf("Current Hash Rate: %dH/s\n\r", hash_count);
     hash_count = 0;
 }
 
@@ -282,37 +282,37 @@ void serialPrint(){
             case MSG:{
                 switch(static_cast<msg_types>(pMessage->data)){
                     case YAY:
-                        pc.printf("Nay!\n");
+                        pc.printf("Nay!\n\r");
                         break;
                     case NAY:
-                        pc.printf("Nay!\n");
+                        pc.printf("Nay!\n\r");
                         break;
                     case WRONG_ORDER:
-                        pc.printf("Wrong order commander, think again!\n");
+                        pc.printf("Wrong order commander, think again!\n\r");
                         break;
                     case WHATS_NEXT:
-                        pc.printf("What's next commander?\n");
+                        pc.printf("What's next commander?\n\r");
                         break;
                 }
             }
 
             case NEW_KEY:
-                pc.printf("Setting bitcoin key to 0x%016x\n", pMessage->data);
+                pc.printf("Setting bitcoin key to 0x%016x\n\r", pMessage->data);
                 break;
             case NEW_SPEED:
-                pc.printf("Setting maximum speed to 0x%016x\n", pMessage->data);
+                pc.printf("Setting maximum speed to 0x%016x\n\r", pMessage->data);
                 break;
             case NEW_TUNE:
-                pc.printf("Queuing sea shanty 0x%016x\n", pMessage->data);
+                pc.printf("Queuing sea shanty 0x%016x\n\r", pMessage->data);
                 break;
             case NEW_ROTATION:
-                pc.printf("Rotating 0x%016x\n revolutions\n", pMessage->data);
+                pc.printf("Rotating 0x%016x\n\r revolutions\n\r", pMessage->data);
                 break;
             case ROTOR_ORIGIN:
-                pc.printf("Rotor origin at 0x%016x\n\n", pMessage->data);
+                pc.printf("Rotor origin at 0x%016x\n\r", pMessage->data);
                 break;
             case NONCE_FOUND:
-                pc.printf("We've found ourselves a nonce! 0x%016x\n\n", pMessage->data);
+                pc.printf("We've found ourselves a nonce! 0x%016x\n\r", pMessage->data);
                 break;
         }
 
