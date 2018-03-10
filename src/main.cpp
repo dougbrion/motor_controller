@@ -128,9 +128,9 @@ uint32_t cmd_torque = PWM_PERIOD;
 
 
 // ---------- THREADING VARIABLES ----------
-Thread serialPrint_th;
-Thread decodeCommands_th;
-Thread velocityCalc_th;
+Thread serialPrint_th(osPriorityNormal,1000);
+Thread decodeCommands_th(osPriorityNormal,1000);
+Thread velocityCalc_th(osPriorityNormal,200);
 
 Mutex newKey_mutex;
 // int mSpeed;
@@ -386,7 +386,7 @@ void decodeCommands(){
     }
 }
 
-/*
+
 void signalVelocity(){
   velocityCalc_th.signal_set(0x1);//velSig = 1;
 }
@@ -403,13 +403,12 @@ void velocityCalc(){
     velocity_count = 0;
     if (iter==10){
       // Print velocity
-      // queueMessage();
+      queueMessage(MSG, uint64_t(VELOCITY));
       iter = 0;
     }
-    velocityCalc_th.signal_set(0);
   }
 }
-*/
+
 int main() {
 
     //Run the motor synchronisation
@@ -434,18 +433,14 @@ int main() {
     channelA.fall(&updateEncoder);
     channelB.fall(&updateEncoder);
 
-    //setup timer
-    // Ticker t;
-    // t.attach(&count, 1.0);
-
     //set up threads
     serialPrint_th.start(&serialPrint);
     decodeCommands_th.start(&decodeCommands);
 
     // Velocity calculation thread
-    // velocityCalc_th.start(&velocityCalc);
-    // Ticker t;
-    // t.attach(&signalVelocity, 0.1); // 100ms
+    velocityCalc_th.start(&velocityCalc);
+    Ticker t;
+    t.attach(&signalVelocity, 0.1); // 100ms
 
     updateMotor();
     while(true){
