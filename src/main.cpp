@@ -1,7 +1,7 @@
 #include "mbed.h"
 #include "rtos.h"
 #include "hash/SHA256.h"
-#include <stdlib.h>
+// #include <stdlib.h>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -74,14 +74,17 @@ enum printCodes{
     NEW_TUNE,
     NEW_ROTATION,
     ROTOR_ORIGIN,
-    NONCE_FOUND
+    NONCE_FOUND,
 };
 
 enum msg_types{
+    NONE,
     YAY,
     NAY,
     WRONG_ORDER,
-    WHATS_NEXT
+    WHATS_NEXT,
+    TORQUE,
+    VELOCITY
 };
 
 // ---------- SERIAL VARIABLES ----------
@@ -120,6 +123,8 @@ volatile uint64_t newKey;
 int32_t velocity = 0;
 int16_t velocity_count = 0;
 int32_t encoder_state = 0;
+
+uint32_t cmd_torque;
 
 
 // ---------- THREADING VARIABLES ----------
@@ -188,7 +193,7 @@ void updateMotor(){
         velocity_count--;
     }
     last_state = intState;
-    motorOut((intState - orState + lead + 6) % 6); //+6 to make sure the remainder is positive
+    motorOut((intState - orState + lead + 6) % 6,cmd_torque); //+6 to make sure the remainder is positive
 }
 
 void updateEncoder(){
@@ -278,6 +283,12 @@ void serialPrint(){
                         break;
                     case WHATS_NEXT:
                         pc.printf("What's next commander?\n\r");
+                        break;
+                    case TORQUE:
+                        pc.printf("Torque: %d\n\r", cmd_torque);
+                        break;
+                    case VELOCITY:
+                        pc.printf("Velocity: %d\n\r", velocity);
                         break;
                 }
             break;
@@ -374,7 +385,9 @@ void decodeCommands(){
                 //TODO: set tune
                 case 'T':
                 case 't':
-                    queueMessage(NEW_TUNE, 0);
+                    sscanf(command, "t%10llx", &cmd_torque);
+                    queueMessage(MSG, cmd_torque);
+                    //queueMessage(NEW_TUNE, 0);
                     break;
 
                 default:
