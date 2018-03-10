@@ -106,9 +106,6 @@ void updateMotor(){
 }
 //Main
 int main() {
-    int8_t orState = 0;    //Rotot offset at motor state 0
-    int8_t intState = 0;
-    int8_t intStateOld = 0;
     L1L.period_us(PWM_PERIOD);
     L2L.period_us(PWM_PERIOD);
     L3L.period_us(PWM_PERIOD);
