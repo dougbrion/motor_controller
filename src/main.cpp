@@ -43,9 +43,9 @@ const int PWM_PERIOD = 256;
 DigitalOut led1(LED1);
 
 //Photointerrupter inputs
-DigitalIn I1(I1pin);
-DigitalIn I2(I2pin);
-DigitalIn I3(I3pin);
+InterruptIn I1(I1pin);
+InterruptIn I2(I2pin);
+InterruptIn I3(I3pin);
 
 //Motor Drive outputs
 PwmOut L1L(L1Lpin);
@@ -93,6 +93,17 @@ int8_t motorHome() {
     return readRotorState();
 }
 
+int8_t orState = 0;    //Rotot offset at motor state 0
+int8_t intState = 0;
+int8_t intStateOld = 0;
+
+void updateMotor(){
+  intState = readRotorState();
+  if (intState != intStateOld) {
+      intStateOld = intState;
+      motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
+  }
+}
 //Main
 int main() {
     int8_t orState = 0;    //Rotot offset at motor state 0
@@ -101,6 +112,14 @@ int main() {
     L1L.period_us(PWM_PERIOD);
     L2L.period_us(PWM_PERIOD);
     L3L.period_us(PWM_PERIOD);
+    
+    //set photointerrupter interrupts
+    I1.rise(&updateMotor);
+    I1.fall(&updateMotor);
+    I2.rise(&updateMotor);
+    I2.fall(&updateMotor);
+    I3.rise(&updateMotor);
+    I3.fall(&updateMotor);
     //Initialise the serial port
     Serial pc(SERIAL_TX, SERIAL_RX);
     pc.printf("Hello\n\r");
