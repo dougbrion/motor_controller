@@ -250,19 +250,6 @@ void updateEncoder(){
 //     }
 // }
 
-void motor_speed(){
-  while(true){
-    // Get mutex for speed
-    // mSpeed_mutex.lock();
-    // Motor control stuff
-    // pc.printf("Pretending to set motor speed to %d.\n\r",mSpeed);
-    // Release mutex for speed
-    // mSpeed_mutex.unlock();
-    wait(1.0);
-    // Thread::yield();
-  }
-}
-
 // Checks message queue and prints
 void serialPrint(){
     while(1) {
