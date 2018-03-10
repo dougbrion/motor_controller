@@ -254,7 +254,7 @@ void serialPrint(){
             case MSG:
                 switch(static_cast<msg_types>(pMessage->data)){
                     case YAY:
-                        pc.printf("Nay!\n\r");
+                        pc.printf("Yay!\n\r");
                         break;
                     case NAY:
                         pc.printf("Nay!\n\r");
