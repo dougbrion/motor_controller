@@ -279,7 +279,7 @@ void serialPrint(){
         message_t *pMessage = (message_t*)newEvent.value.p;
 
         switch(pMessage->code){
-            case MSG:{
+            case MSG:
                 switch(static_cast<msg_types>(pMessage->data)){
                     case YAY:
                         pc.printf("Nay!\n\r");
@@ -294,7 +294,7 @@ void serialPrint(){
                         pc.printf("What's next commander?\n\r");
                         break;
                 }
-            }
+            break;
 
             case NEW_KEY:
                 pc.printf("Setting bitcoin key to 0x%016x\n\r", pMessage->data);
