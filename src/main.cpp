@@ -40,7 +40,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
 //Phase lead to make motor spin
-const int8_t lead = 2;  //2 for forwards, -2 for backwards
+int8_t lead = 2;  //2 for forwards, -2 for backwards
 
 int8_t orState = 0;
 
@@ -60,7 +60,8 @@ DigitalOut L2H(L2Hpin);
 PwmOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
-const int PWM_PERIOD=256; // us
+const int PWM_PERIOD=2000; // us
+// Duty cycle must be between 0 and 50% of 2000
 
 //Encoder
 InterruptIn channelA(CHA);
@@ -125,8 +126,8 @@ int32_t target_velocity = 50;
 int16_t velocity_count = 0;
 int32_t encoder_state = 0;
 
-uint32_t cmd_torque = PWM_PERIOD;
-uint32_t K_P = 20;
+uint32_t cmd_torque = 0.5*PWM_PERIOD; // Max power (duty cycle) allowed is 50%
+uint32_t K_P = 10;
 uint32_t K_D = 20;
 
 
@@ -170,7 +171,7 @@ inline int8_t readRotorState(){
 //Basic synchronisation routine
 int8_t motorHome() {
     //Put the motor in drive state 0 and wait for it to stabilise
-    motorOut(0,PWM_PERIOD); // Set to 100% pwm
+    motorOut(0,0.5*PWM_PERIOD); // Max duty cycle allowed is 50%
     wait(1.0);
 
     //Get the rotor state
@@ -188,6 +189,9 @@ void updateMotor(){
     }
     last_state = intState;
     motorOut((intState - orState + lead + 6) % 6,cmd_torque); //+6 to make sure the remainder is positive
+
+    // 'intState' is 'rotorState' from the instructions
+    // 'cmd_torque' is 'motorPower' from the instructions
 }
 
 void updateEncoder(){
@@ -370,6 +374,9 @@ void decodeCommands(){
 void signalVelocity(){
   velocityCalc_th.signal_set(0x1);//velSig = 1;
 }
+
+
+
 Timer t;
 void velocityCalc(){
   static uint8_t iter = 0;
@@ -378,6 +385,8 @@ void velocityCalc(){
   float old_error = 0;
   float error = 0;
   float diff_term = 0;
+
+
   while (true){
     // Wait until signal from signalVelocity
     velocityCalc_th.signal_wait(0x1);
@@ -391,15 +400,22 @@ void velocityCalc(){
     __enable_irq();
     time_passed = t.read();
     velocity = (local_vc * 10/ 6);
+
     t.reset();
     t.start();
 
-    // set torque equal to baseline + P loop
+    // Implementing velocity control only
     error = target_velocity - velocity;
-    diff_term = (error - old_error) / time_passed;
-    //cmd_torque = 128 + (K_P * error) + (K_D * diff_term);
+    cmd_torque = 128 + K_P*error; // 128 is the corresponding torque for target velocity = 50
+    if(cmd_torque<0)
+    {
+      lead = -lead;
+    }
 
-    old_error = error;
+    //diff_term = (error - old_error) / time_passed;
+    // set torque equal to baseline + P loop
+    //cmd_torque = 128 + (K_P * error) + (K_D * diff_term);
+    //old_error = error;
 
     if (iter==10){
       // Print velocity
@@ -408,6 +424,10 @@ void velocityCalc(){
     }
   }
 }
+
+
+
+
 
 int main() {
 
