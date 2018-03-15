@@ -2,6 +2,7 @@
 #include "rtos.h"
 #include "hash/SHA256.h"
 #include <stdlib.h>
+#include <algorithm>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -42,7 +43,8 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //Phase lead to make motor spin
 int8_t lead = 2;  //2 for forwards, -2 for backwards
 
-int8_t orState = 0;
+static int8_t orState = 0;
+
 
 //Status LED
 DigitalOut led1(LED1);
@@ -124,10 +126,14 @@ volatile uint64_t newKey;
 int32_t velocity = 0;
 int32_t target_velocity = 50;
 int16_t velocity_count = 0;
+
+int32_t target_position = 100;
+int32_t motorPosition=0;
+
 int32_t encoder_state = 0;
 
 uint32_t cmd_torque = 0.5*PWM_PERIOD; // Max power (duty cycle) allowed is 50%
-uint32_t K_P = 10;
+uint32_t K_P = 25;
 uint32_t K_D = 20;
 
 
@@ -179,18 +185,35 @@ int8_t motorHome() {
 }
 
 void updateMotor(){
+
     static int8_t last_state = 0;
-    int8_t intState = readRotorState();
+    static int8_t intState = readRotorState();
+
     // Compare with last_state
     if (!(intState==7&&last_state==0)&&((intState==0&&last_state==7) || intState>last_state)){
         velocity_count++;
     } else if ((intState==7&&last_state==0)||intState<last_state){
         velocity_count--;
     }
+
     last_state = intState;
     motorOut((intState - orState + lead + 6) % 6,cmd_torque); //+6 to make sure the remainder is positive
 
+    if(intState - orState == 5)
+    {
+      motorPosition--;
+    }
+    else if(intState - orState == -5)
+    {
+      motorPosition++;
+    }
+    else
+    {
+      motorPosition += (intState - orState);
+    }
+
     // 'intState' is 'rotorState' from the instructions
+    // 'orState' is 'oldRotorState' from the instructions
     // 'cmd_torque' is 'motorPower' from the instructions
 }
 
@@ -382,10 +405,17 @@ void velocityCalc(){
   static uint8_t iter = 0;
   float local_vc = 0;
   float time_passed = 1;
-  float old_error = 0;
-  float error = 0;
-  float diff_term = 0;
 
+  float old_velocity_error = 0;
+  float velocity_error = 0;
+
+  float position_error = 0;
+  float old_position_error = 0;
+
+  float velocity_controller = 0;
+  float position_controller = 0;
+
+  float controller_used = 0;
 
   while (true){
     // Wait until signal from signalVelocity
@@ -404,15 +434,31 @@ void velocityCalc(){
     t.reset();
     t.start();
 
+
     // Implementing velocity control only
-    error = target_velocity - velocity;
-    cmd_torque = 128 + K_P*error; // 128 is the corresponding torque for target velocity = 50
-    if(cmd_torque<0)
+    velocity_error = target_velocity - abs(velocity);
+    velocity_controller = K_P*velocity_error; // 128 is the corresponding torque for target velocity = 50
+    if(velocity_controller<0)
     {
       lead = -lead;
     }
 
-    //diff_term = (error - old_error) / time_passed;
+    // Implementing position control only
+    position_error = target_position - motorPosition;
+    position_controller = copysign((K_P*position_error + K_D*(position_error)/time_passed), position_error);
+
+    if(velocity < 0)
+    {
+      controller_used = max(velocity_controller, position_controller);
+    }
+    else
+    {
+      controller_used = min(velocity_controller,position_controller);
+    }
+
+    cmd_torque = 128 + controller_used;
+
+    // diff_term = (target_position - motorPosition) / time_passed;
     // set torque equal to baseline + P loop
     //cmd_torque = 128 + (K_P * error) + (K_D * diff_term);
     //old_error = error;
