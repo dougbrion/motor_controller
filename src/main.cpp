@@ -434,29 +434,38 @@ void velocityCalc(){
     t.reset();
     t.start();
 
+    // Implementing velocity control only
+    // error = target_velocity - velocity;
+    // cmd_torque = 128 + K_P*error; // 128 is the corresponding torque for target velocity = 50
+    // if(cmd_torque<0)
+    // {
+    //   lead = -lead;
+    // }
 
     // Implementing velocity control only
     velocity_error = target_velocity - abs(velocity);
     velocity_controller = K_P*velocity_error; // 128 is the corresponding torque for target velocity = 50
+    pc.printf("Velocity Controller: %f\n", velocity_controller);
     if(velocity_controller<0)
     {
       lead = -lead;
     }
 
     // Implementing position control only
-    position_error = target_position - motorPosition;
-    position_controller = copysign((K_P*position_error + K_D*(position_error)/time_passed), position_error);
+    // position_error = target_position - motorPosition;
+    // position_controller = std::copysign((K_P*position_error + K_D*(position_error)/time_passed), position_error);
+    // pc.printf("Position Controller: %f\n", position_controller);
+    //
+    // if(velocity < 0)
+    // {
+    //   controller_used = max(velocity_controller, position_controller);
+    // }
+    // else
+    // {
+    //   controller_used = min(velocity_controller, position_controller);
+    // }
 
-    if(velocity < 0)
-    {
-      controller_used = max(velocity_controller, position_controller);
-    }
-    else
-    {
-      controller_used = min(velocity_controller,position_controller);
-    }
-
-    cmd_torque = 128 + controller_used;
+    cmd_torque = 128 + controller_used; // What's the baseline for position?
 
     // diff_term = (target_position - motorPosition) / time_passed;
     // set torque equal to baseline + P loop
@@ -466,6 +475,7 @@ void velocityCalc(){
     if (iter==10){
       // Print velocity
       queueMessage(MSG, uint64_t(VELOCITY));
+
       iter = 0;
     }
   }
