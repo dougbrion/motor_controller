@@ -187,7 +187,7 @@ int8_t motorHome() {
 void updateMotor(){
 
     static int8_t last_state = 0;
-    static int8_t intState = readRotorState();
+    int8_t intState = readRotorState();
 
     // Compare with last_state
     if (!(intState==7&&last_state==0)&&((intState==0&&last_state==7) || intState>last_state)){
@@ -442,28 +442,28 @@ void velocityCalc(){
     //   lead = -lead;
     // }
 
+
+
+    // Implementing position control only
+    position_error = target_position - motorPosition;
+    position_controller = K_P*position_error + K_D*(position_error)/time_passed);
+    // pc.printf("Position Controller: %f\n", position_controller);
     // Implementing velocity control only
     velocity_error = target_velocity - abs(velocity);
-    velocity_controller = K_P*velocity_error; // 128 is the corresponding torque for target velocity = 50
-    pc.printf("Velocity Controller: %f\n", velocity_controller);
-    if(velocity_controller<0)
+    velocity_controller = std::copysign(K_P*velocity_error, position_error); // 128 is the corresponding torque for target velocity = 50
+    // pc.printf("Velocity Controller: %f\n", velocity_controller);
+    if(velocity_controller + 128 < 0)
     {
       lead = -lead;
     }
-
-    // Implementing position control only
-    // position_error = target_position - motorPosition;
-    // position_controller = std::copysign((K_P*position_error + K_D*(position_error)/time_passed), position_error);
-    // pc.printf("Position Controller: %f\n", position_controller);
-    //
-    // if(velocity < 0)
-    // {
-    //   controller_used = max(velocity_controller, position_controller);
-    // }
-    // else
-    // {
-    //   controller_used = min(velocity_controller, position_controller);
-    // }
+    if(velocity < 0)
+    {
+      controller_used = max(velocity_controller, position_controller);
+    }
+    else
+    {
+      controller_used = min(velocity_controller, position_controller);
+    }
 
     cmd_torque = 128 + controller_used; // What's the baseline for position?
 
