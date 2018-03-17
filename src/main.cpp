@@ -2,6 +2,7 @@
 #include "rtos.h"
 #include "hash/SHA256.h"
 #include <stdlib.h>
+#include <string>
 #include <algorithm>
 
 //Photointerrupter input pins
@@ -355,12 +356,12 @@ void decodeCommands(){
     while(true){
         osEvent newEvent = charBuffer.get();
         uint8_t newChar = (uint8_t)newEvent.value.p;
-
-        if(newChar != '\r'){
+        pc.printf("%c", newChar);
+        if (newChar != '\r') {
             command[index] = newChar;
             index++;
         }
-        else{
+        else {
             command[index] = '\0';
             index = 0;
 
@@ -368,14 +369,17 @@ void decodeCommands(){
 
             switch(command[0]) {
                 //TODO: set number of rotations
+                case 'R':
                 case 'r':
                     sscanf(command, "r%10llx", &tmp);
-                    // rotations = (uint32_t)tmp;
-                    // target_position = 6 * rotations;
+                    pc.printf("R: ", tmp);
                     queueMessage(NEW_ROTATION, tmp);
+                    target_position = 6 * (uint32_t)tmp;   
+                    queueMessage(MSG, uint64_t(ROTATIONS));
                     break;
 
                 //TODO: set speed
+                case 'V':
                 case 'v':
                     sscanf(command, "v%10llx", &tmp);
                     // target_velocity = (uint32_t)tmp;
@@ -383,12 +387,17 @@ void decodeCommands(){
                     break;
 
                 // K[0-9a-f]{16}
+                case 'K':
                 case 'k':
-                    sscanf(command, "k%10llx", &tmp);
+                    newKey_mutex.lock();
+                    sscanf(command, "K%x", &newKey);
+                    newKey_mutex.unlock();
+                    pc.printf("Key: %a", newKey);
                     //valid_key(tmp);
                     break;
 
                 //TODO: set tune
+                case 'T':
                 case 't':
                     sscanf(command, "t%i", &cmd_torque);
                     queueMessage(MSG, uint64_t(TORQUE));
@@ -400,6 +409,7 @@ void decodeCommands(){
                     break;
             }
             queueMessage(MSG, uint64_t(WHATS_NEXT));
+            std::memset(command, 0, sizeof(command));
         }
     }
 }
