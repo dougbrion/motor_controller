@@ -83,6 +83,7 @@ enum printCodes{
 
 enum msg_types{
     NONE,
+    ORDERS,
     YAY,
     NAY,
     WRONG_ORDER,
@@ -90,7 +91,9 @@ enum msg_types{
     TORQUE,
     VELOCITY,
     POSITION,
-    ROTATIONS
+    ROTATIONS,
+    TARGET_POSITION,
+    TARGET_VELOCITY
 };
 
 // ---------- SERIAL VARIABLES ----------
@@ -193,14 +196,14 @@ void updateMotor(){
     int8_t intState = readRotorState();
 
     // Compare with last_state
-    if (!(intState == 7 && last_state == 0) && ((intState == 0 && last_state == 7) || intState>last_state)){
+    if (!(intState == 7 && last_state == 0) && ((intState == 0 && last_state == 7) || intState > last_state)){
         velocity_count++;
     } else if ((intState == 7 && last_state == 0) || (intState < last_state)){
         velocity_count--;
     }
 
     last_state = intState;
-    motorOut((intState - orState + lead + 6) % 6,cmd_torque); //+6 to make sure the remainder is positive
+    motorOut((intState - orState + lead + 6) % 6, cmd_torque); //+6 to make sure the remainder is positive
 
     if(intState - orState == 5)
     {
@@ -213,7 +216,7 @@ void updateMotor(){
     else
     {
       motor_position += (intState - orState);
-      orState = intState;
+    //   orState = intState;
     }
 
     // 'intState' is 'rotorState' from the instructions
@@ -284,6 +287,8 @@ void serialPrint(){
         switch(pMessage->code){
             case MSG:
                 switch(static_cast<msg_types>(pMessage->data)){
+                    case ORDERS:
+                        pc.printf("Set rotations, speed or key. Which would you like commander?\n\r");
                     case YAY:
                         pc.printf("Yay!\n\r");
                         break;
@@ -307,6 +312,12 @@ void serialPrint(){
                         break;
                     case ROTATIONS:
                         pc.printf("Rotations: %d\n\r", rotations);
+                        break;
+                    case TARGET_POSITION:
+                        pc.printf("Target Position: %d\n\r", target_position);
+                        break;
+                    case TARGET_VELOCITY:
+                        pc.printf("Target Velocity: %d\n\r", target_velocity);
                         break;
                 }
             break;
@@ -379,17 +390,14 @@ void decodeCommands(){
                 case 'R':
                 case 'r':
                     sscanf(command, "r%6lf", &rev_tmp);
-                    pc.printf("R: %lf", rev_tmp);
                     queueMessage(NEW_ROTATION, rev_tmp);
-                    target_position = int32_t(6 * rev_tmp);   
-                    queueMessage(MSG, uint64_t(ROTATIONS));
+                    target_position = int32_t(motor_position + (6 * rev_tmp));
                     break;
 
                 //TODO: set speed
                 case 'V':
                 case 'v':
                     sscanf(command, "v%lf", &vel_tmp);
-                    pc.printf("V: %lf", vel_tmp);
                     target_velocity = int32_t(vel_tmp);
                     queueMessage(NEW_SPEED, target_velocity);
                     break;
@@ -399,8 +407,9 @@ void decodeCommands(){
                 case 'k':
                     newKey_mutex.lock();
                     sscanf(command, "k%016x", &newKey);
+                    // pc.printf("Key: %16x", newKey);
+                    queueMessage(NEW_KEY, uint64_t(newKey));
                     newKey_mutex.unlock();
-                    pc.printf("Key: %016x", newKey);
                     //valid_key(tmp);
                     break;
 
@@ -458,7 +467,7 @@ void velocityCalc(){
     velocity_count = 0;
     __enable_irq();
     time_passed = t.read();
-    velocity = (local_vc * 10/ 6);
+    velocity = (local_vc * 10 / 6);
 
     t.reset();
     t.start();
@@ -473,7 +482,7 @@ void velocityCalc(){
     if (velocity_controller + 128 < 0) {
       lead = -lead;
     }
-    if(velocity < 0)
+    if(velocity + 128 < 0)
     {
       controller_used = max(velocity_controller, position_controller);
     }
@@ -486,10 +495,11 @@ void velocityCalc(){
 
     if (iter == 10){
       // Print velocity
-      queueMessage(MSG, uint64_t(VELOCITY));
-    //   queueMessage(MSG, uint64_t(POSITION));
-
-      iter = 0;
+        queueMessage(MSG, uint64_t(VELOCITY));
+        queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
+        queueMessage(MSG, uint64_t(POSITION));
+        queueMessage(MSG, uint64_t(TARGET_POSITION));
+        iter = 0;
     }
   }
 }
@@ -542,7 +552,7 @@ int main() {
 
         //successful nonce
         if((hash[0] == 0) && (hash[1] == 0)){
-            queueMessage(NONCE_FOUND, *nonce);
+            // queueMessage(NONCE_FOUND, *nonce);
         }
         *nonce += 1;
         hash_count++;
