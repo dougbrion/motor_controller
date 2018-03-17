@@ -127,10 +127,10 @@ volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
 int32_t velocity = 0;
-int32_t target_velocity = 0;
+volatile int32_t target_velocity = 50;
 int16_t velocity_count = 0;
 
-int32_t target_position = 0;
+volatile int32_t target_position = 100;
 int32_t motor_position = 0;
 int32_t rotations = 0;
 
@@ -180,7 +180,7 @@ inline int8_t readRotorState(){
 //Basic synchronisation routine
 int8_t motorHome() {
     //Put the motor in drive state 0 and wait for it to stabilise
-    motorOut(0,0.5*PWM_PERIOD); // Max duty cycle allowed is 50%
+    motorOut(0, 0.5 * PWM_PERIOD); // Max duty cycle allowed is 50%
     wait(1.0);
 
     //Get the rotor state
@@ -213,6 +213,7 @@ void updateMotor(){
     else
     {
       motor_position += (intState - orState);
+      orState = intState;
     }
 
     // 'intState' is 'rotorState' from the instructions
@@ -357,6 +358,10 @@ void decodeCommands(){
         osEvent newEvent = charBuffer.get();
         uint8_t newChar = (uint8_t)newEvent.value.p;
         pc.printf("%c", newChar);
+        if (index > 31) {
+            index == 0;
+            std::memset(command, 0, sizeof(command));
+        }
         if (newChar != '\r') {
             command[index] = newChar;
             index++;
@@ -366,33 +371,36 @@ void decodeCommands(){
             index = 0;
 
             uint64_t tmp;
+            double rev_tmp;
+            double vel_tmp;
 
             switch(command[0]) {
                 //TODO: set number of rotations
                 case 'R':
                 case 'r':
-                    sscanf(command, "r%10llx", &tmp);
-                    pc.printf("R: ", tmp);
-                    queueMessage(NEW_ROTATION, tmp);
-                    target_position = 6 * (uint32_t)tmp;   
+                    sscanf(command, "r%6lf", &rev_tmp);
+                    pc.printf("R: %lf", rev_tmp);
+                    queueMessage(NEW_ROTATION, rev_tmp);
+                    target_position = int32_t(6 * rev_tmp);   
                     queueMessage(MSG, uint64_t(ROTATIONS));
                     break;
 
                 //TODO: set speed
                 case 'V':
                 case 'v':
-                    sscanf(command, "v%10llx", &tmp);
-                    // target_velocity = (uint32_t)tmp;
-                    queueMessage(NEW_SPEED, tmp);
+                    sscanf(command, "v%lf", &vel_tmp);
+                    pc.printf("V: %lf", vel_tmp);
+                    target_velocity = int32_t(vel_tmp);
+                    queueMessage(NEW_SPEED, target_velocity);
                     break;
 
                 // K[0-9a-f]{16}
                 case 'K':
                 case 'k':
                     newKey_mutex.lock();
-                    sscanf(command, "K%x", &newKey);
+                    sscanf(command, "k%016x", &newKey);
                     newKey_mutex.unlock();
-                    pc.printf("Key: %a", newKey);
+                    pc.printf("Key: %016x", newKey);
                     //valid_key(tmp);
                     break;
 
@@ -478,7 +486,7 @@ void velocityCalc(){
 
     if (iter == 10){
       // Print velocity
-    //   queueMessage(MSG, uint64_t(VELOCITY));
+      queueMessage(MSG, uint64_t(VELOCITY));
     //   queueMessage(MSG, uint64_t(POSITION));
 
       iter = 0;
@@ -534,7 +542,7 @@ int main() {
 
         //successful nonce
         if((hash[0] == 0) && (hash[1] == 0)){
-            // queueMessage(NONCE_FOUND, *nonce);
+            queueMessage(NONCE_FOUND, *nonce);
         }
         *nonce += 1;
         hash_count++;
