@@ -79,6 +79,7 @@ enum printCodes{
     NEW_ROTATION,
     ROTOR_ORIGIN,
     NONCE_FOUND,
+    ROTATION_ERROR
 };
 
 enum msg_types{
@@ -93,7 +94,8 @@ enum msg_types{
     POSITION,
     ROTATIONS,
     TARGET_POSITION,
-    TARGET_VELOCITY
+    TARGET_VELOCITY,
+    TARGET_ROTATIONS
 };
 
 // ---------- SERIAL VARIABLES ----------
@@ -102,7 +104,7 @@ RawSerial pc(SERIAL_TX, SERIAL_RX);
 //TODO: change data to 32 bits and put two messages on the queue for the key
 typedef struct{
     printCodes code;
-    uint64_t data;
+    uint32_t data;
  } message_t;
 
 Mail<message_t,16> outMessages;
@@ -133,9 +135,11 @@ int32_t velocity = 0;
 volatile int32_t target_velocity = 50;
 int16_t velocity_count = 0;
 
-volatile int32_t target_position = 100;
 int32_t motor_position = 0;
-int32_t rotations = 0;
+volatile double target_rotations = 15;
+volatile int32_t target_position = int32_t(6 * target_rotations);
+
+double rotations = 0;
 
 int32_t encoder_state = 0;
 
@@ -310,6 +314,9 @@ void serialPrint(){
                     case POSITION:
                         pc.printf("Position: %d\n\r", motor_position);
                         break;
+                    case TARGET_ROTATIONS:
+                        pc.printf("Target Rotations: %d\n\r", target_rotations);
+                        break;
                     case ROTATIONS:
                         pc.printf("Rotations: %d\n\r", rotations);
                         break;
@@ -332,13 +339,16 @@ void serialPrint(){
                 pc.printf("Queuing sea shanty 0x%016x\n\r", pMessage->data);
                 break;
             case NEW_ROTATION:
-                pc.printf("Rotating 0x%016x\n\r revolutions\n\r", pMessage->data);
+                pc.printf("Rotating %d revolutions\n\r", pMessage->data);
                 break;
             case ROTOR_ORIGIN:
                 pc.printf("Rotor origin at 0x%016x\n\r", pMessage->data);
                 break;
             case NONCE_FOUND:
                 pc.printf("We've found ourselves a nonce! 0x%016x\n\r", pMessage->data);
+                break;
+            case ROTATION_ERROR:
+                pc.printf("Error, your input for setting revolutions was wrong!", pMessage->data);
                 break;
         }
 
@@ -370,7 +380,7 @@ void decodeCommands(){
         uint8_t newChar = (uint8_t)newEvent.value.p;
         pc.printf("%c", newChar);
         if (index > 31) {
-            index == 0;
+            index = 0;
             std::memset(command, 0, sizeof(command));
         }
         if (newChar != '\r') {
@@ -381,44 +391,65 @@ void decodeCommands(){
             command[index] = '\0';
             index = 0;
 
-            uint64_t tmp;
             double rev_tmp;
+            int before_point;
+            int after_point;
             double vel_tmp;
+            char neg_check;
+            double decimal;
 
             switch(command[0]) {
                 //TODO: set number of rotations
                 case 'R':
                 case 'r':
-                    sscanf(command, "r%6lf", &rev_tmp);
-                    queueMessage(NEW_ROTATION, rev_tmp);
-                    target_position = int32_t(motor_position + (6 * rev_tmp));
+                    sscanf(command, "%*[rR]%c%3u.%2u", &neg_check, &before_point, &after_point);
+                    if (neg_check != '-') {
+                        sscanf(command, "%*[rR]%3u.%2u", &before_point, &after_point);
+                    }
+                    pc.printf("Before: %d\n\r", before_point);
+                    pc.printf("After: %d\n\r", after_point);
+                    if (before_point > 999 || before_point < 0) {
+                        queueMessage(ROTATION_ERROR, uint32_t(before_point));
+                    }
+                    if (after_point < 10 && after_point >= 0) {
+                        decimal = double(after_point) / 10;
+                    }
+                    else if (after_point < 100 && after_point >= 10) {
+                        decimal = double(after_point) / 100;
+                    } else {
+                        // Something happened
+                        queueMessage(ROTATION_ERROR, uint32_t(after_point));
+                    }
+                    rev_tmp = before_point + decimal;
+                    if (neg_check == '-') {
+                        rev_tmp = -rev_tmp;
+                    }
+                    pc.printf("Rotation: %lf\n\r", rev_tmp);
+                    // queueMessage(NEW_ROTATION, uint32_t(rev_tmp));
+                    target_rotations = rotations + rev_tmp;
+                    target_position = int32_t(6 * target_rotations);
                     break;
 
                 //TODO: set speed
                 case 'V':
                 case 'v':
-                    sscanf(command, "v%lf", &vel_tmp);
-                    target_velocity = int32_t(vel_tmp);
-                    queueMessage(NEW_SPEED, target_velocity);
+                    sscanf(command, "%*[vV]%3u.%u", &before_point, &after_point);
+                    pc.printf("Before: %d\n\r", before_point);
+                    pc.printf("After: %d\n\r", after_point);
+                    // target_velocity = int32_t(vel_tmp);
+                    // queueMessage(NEW_SPEED, target_velocity);
                     break;
 
                 // K[0-9a-f]{16}
                 case 'K':
                 case 'k':
                     newKey_mutex.lock();
-                    sscanf(command, "k%016x", &newKey);
+                    sscanf(command, "%*[kK]%16x", &newKey);
                     // pc.printf("Key: %16x", newKey);
                     queueMessage(NEW_KEY, uint64_t(newKey));
+                    *key = newKey;
                     newKey_mutex.unlock();
                     //valid_key(tmp);
-                    break;
-
-                //TODO: set tune
-                case 'T':
-                case 't':
-                    sscanf(command, "t%i", &cmd_torque);
-                    queueMessage(MSG, uint64_t(TORQUE));
-                    //queueMessage(NEW_TUNE, 0);
                     break;
 
                 default:
@@ -444,11 +475,9 @@ void velocityCalc(){
   float local_vc = 0;
   float time_passed = 1;
 
-  float old_velocity_error = 0;
   float velocity_error = 0;
 
   float position_error = 0;
-  float old_position_error = 0;
 
   float velocity_controller = 0;
   float position_controller = 0;
@@ -479,15 +508,13 @@ void velocityCalc(){
     // Implementing velocity control only
     velocity_error = target_velocity - abs(velocity);
     velocity_controller = std::copysign(K_P * velocity_error, position_error); 
+
     if (velocity_controller + 128 < 0) {
       lead = -lead;
     }
-    if(velocity + 128 < 0)
-    {
+    if (velocity + 128 < 0) {
       controller_used = max(velocity_controller, position_controller);
-    }
-    else
-    {
+    } else {
       controller_used = min(velocity_controller, position_controller);
     }
 
@@ -495,10 +522,10 @@ void velocityCalc(){
 
     if (iter == 10){
       // Print velocity
-        queueMessage(MSG, uint64_t(VELOCITY));
-        queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
-        queueMessage(MSG, uint64_t(POSITION));
-        queueMessage(MSG, uint64_t(TARGET_POSITION));
+        // queueMessage(MSG, uint64_t(VELOCITY));
+        // queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
+        queueMessage(MSG, uint64_t(ROTATIONS));
+        queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
         iter = 0;
     }
   }
