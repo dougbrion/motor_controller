@@ -132,21 +132,21 @@ uint32_t hash_count = 0;
 volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
-double velocity = 0;
-volatile double target_velocity = 50;
+float velocity = 0;
+volatile float target_velocity = 50;
 int16_t velocity_count = 0;
 
 int32_t motor_position = 0;
-volatile double target_rotations = 15;
+volatile float target_rotations = 15;
 volatile int32_t target_position = int32_t(6 * target_rotations);
 
-volatile double rotations = 0;
+volatile float rotations = 0;
 
 int32_t encoder_state = 0;
 
 uint32_t cmd_torque = 0.5 * PWM_PERIOD; // Max power (duty cycle) allowed is 50%
-uint32_t K_P = 25;
-uint32_t K_D = 20;
+uint32_t K_P = 46;
+uint32_t K_D = 30;
 
 
 // ---------- THREADING VARIABLES ----------
@@ -223,7 +223,7 @@ void updateMotor(){
       motor_position += (intState - orState);
     //   orState = intState;
     }
-    rotations = double(motor_position) / 6;
+    rotations = float(motor_position) / 6;
 
     // 'intState' is 'rotorState' from the instructions
     // 'orState' is 'oldRotorState' from the instructions
@@ -372,13 +372,13 @@ void serialISR(){
     charBuffer.put((void*)newChar);
 }
 
-double intsToDouble(int pre_point, int post_point) {
+float intsTofloat(int pre_point, int post_point) {
     if (post_point > 0){
         double power = ceil(log10(double(post_point))); 
-        double dec = double(post_point) / pow(10.0, power);
+        float dec = float(post_point) / pow(10.0, power);
         return (pre_point + dec);
     }
-    return double(pre_point);
+    return float(pre_point);
 }
 
 // decodes commands in the char buffer
@@ -402,12 +402,12 @@ void decodeCommands(){
             command[index] = '\0';
             index = 0;
 
-            double rev_tmp = 0;
+            float rev_tmp = 0;
             int before_point = 0;
             int after_point = 0;
-            double vel_tmp = 0;
+            float vel_tmp = 0;
             char neg_check = '\0';
-            double decimal = 0;
+            float decimal = 0;
 
             switch(command[0]) {
                 //TODO: set number of rotations
@@ -420,7 +420,7 @@ void decodeCommands(){
                     if (after_point < 0 || before_point < 0) {
                         queueMessage(ROTATION_ERROR, uint32_t(before_point));
                     }
-                    rev_tmp = intsToDouble(before_point, after_point);
+                    rev_tmp = intsTofloat(before_point, after_point);
                     if (neg_check == '-') {
                         rev_tmp = -rev_tmp;
                     }
@@ -435,7 +435,7 @@ void decodeCommands(){
                     sscanf(command, "%*[vV]%3u.%u", &before_point, &after_point);
                     pc.printf("Before: %d\n\r", before_point);
                     pc.printf("After: %d\n\r", after_point);
-                    vel_tmp = intsToDouble(before_point, after_point);
+                    vel_tmp = intsTofloat(before_point, after_point);
                     target_velocity = vel_tmp;
                     queueMessage(NEW_SPEED, uint64_t(target_velocity));
                     break;
@@ -509,10 +509,7 @@ void velocityCalc(){
     velocity_error = target_velocity - abs(velocity);
     velocity_controller = std::copysign(K_P * velocity_error, position_error); 
 
-    // if (velocity_controller + 128 < 0) {
-    //   lead = -lead;
-    // }
-    if (velocity + 128 < 0) {
+    if (velocity < 0) {
       controller_used = max(velocity_controller, position_controller);
     } else {
       controller_used = min(velocity_controller, position_controller);
@@ -520,16 +517,16 @@ void velocityCalc(){
 
     cmd_torque = 128 + controller_used; // What's the baseline for position?
 
-    if (cmd_torque < 0) {
+    if (velocity_controller < 0) {
         lead = -lead;
     }
-    
+
     if (iter == 10){
       // Print velocity
-        // queueMessage(MSG, uint64_t(VELOCITY));
-        // queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
-        queueMessage(MSG, uint64_t(ROTATIONS));
-        queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
+        queueMessage(MSG, uint64_t(VELOCITY));
+        queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
+        // queueMessage(MSG, uint64_t(ROTATIONS));
+        // queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
         iter = 0;
     }
   }
