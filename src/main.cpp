@@ -104,7 +104,7 @@ RawSerial pc(SERIAL_TX, SERIAL_RX);
 //TODO: change data to 32 bits and put two messages on the queue for the key
 typedef struct{
     printCodes code;
-    uint32_t data;
+    uint64_t data;
  } message_t;
 
 Mail<message_t,16> outMessages;
@@ -139,7 +139,7 @@ int32_t motor_position = 0;
 volatile double target_rotations = 15;
 volatile int32_t target_position = int32_t(6 * target_rotations);
 
-double rotations = 0;
+volatile double rotations = 0;
 
 int32_t encoder_state = 0;
 
@@ -222,6 +222,7 @@ void updateMotor(){
       motor_position += (intState - orState);
     //   orState = intState;
     }
+    rotations = motor_position / 6;
 
     // 'intState' is 'rotorState' from the instructions
     // 'orState' is 'oldRotorState' from the instructions
@@ -315,10 +316,10 @@ void serialPrint(){
                         pc.printf("Position: %d\n\r", motor_position);
                         break;
                     case TARGET_ROTATIONS:
-                        pc.printf("Target Rotations: %d\n\r", target_rotations);
+                        pc.printf("Target Rotations: %lf\n\r", target_rotations);
                         break;
                     case ROTATIONS:
-                        pc.printf("Rotations: %d\n\r", rotations);
+                        pc.printf("Rotations: %lf\n\r", rotations);
                         break;
                     case TARGET_POSITION:
                         pc.printf("Target Position: %d\n\r", target_position);
@@ -425,7 +426,6 @@ void decodeCommands(){
                         rev_tmp = -rev_tmp;
                     }
                     pc.printf("Rotation: %lf\n\r", rev_tmp);
-                    // queueMessage(NEW_ROTATION, uint32_t(rev_tmp));
                     target_rotations = rotations + rev_tmp;
                     target_position = int32_t(6 * target_rotations);
                     break;
