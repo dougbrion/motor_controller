@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string>
 #include <algorithm>
+#include <cmath>
 
 //Photointerrupter input pins
 #define I1pin D2
@@ -131,8 +132,8 @@ uint32_t hash_count = 0;
 volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
-int32_t velocity = 0;
-volatile int32_t target_velocity = 50;
+double velocity = 0;
+volatile double target_velocity = 50;
 int16_t velocity_count = 0;
 
 int32_t motor_position = 0;
@@ -222,7 +223,7 @@ void updateMotor(){
       motor_position += (intState - orState);
     //   orState = intState;
     }
-    rotations = motor_position / 6;
+    rotations = double(motor_position) / 6;
 
     // 'intState' is 'rotorState' from the instructions
     // 'orState' is 'oldRotorState' from the instructions
@@ -310,7 +311,7 @@ void serialPrint(){
                         pc.printf("Torque: %d\n\r", cmd_torque);
                         break;
                     case VELOCITY:
-                        pc.printf("Velocity: %d\n\r", velocity);
+                        pc.printf("Velocity: %lf\n\r", velocity);
                         break;
                     case POSITION:
                         pc.printf("Position: %d\n\r", motor_position);
@@ -325,7 +326,7 @@ void serialPrint(){
                         pc.printf("Target Position: %d\n\r", target_position);
                         break;
                     case TARGET_VELOCITY:
-                        pc.printf("Target Velocity: %d\n\r", target_velocity);
+                        pc.printf("Target Velocity: %lf\n\r", target_velocity);
                         break;
                 }
             break;
@@ -371,6 +372,15 @@ void serialISR(){
     charBuffer.put((void*)newChar);
 }
 
+double intsToDouble(int pre_point, int post_point) {
+    if (post_point > 0){
+        double power = ceil(log10(double(post_point))); 
+        double dec = double(post_point) / pow(10.0, power);
+        return (pre_point + dec);
+    }
+    return double(pre_point);
+}
+
 // decodes commands in the char buffer
 void decodeCommands(){
     pc.attach(&serialISR);
@@ -392,12 +402,12 @@ void decodeCommands(){
             command[index] = '\0';
             index = 0;
 
-            double rev_tmp;
-            int before_point;
-            int after_point;
-            double vel_tmp;
-            char neg_check;
-            double decimal;
+            double rev_tmp = 0;
+            int before_point = 0;
+            int after_point = 0;
+            double vel_tmp = 0;
+            char neg_check = '\0';
+            double decimal = 0;
 
             switch(command[0]) {
                 //TODO: set number of rotations
@@ -407,27 +417,16 @@ void decodeCommands(){
                     if (neg_check != '-') {
                         sscanf(command, "%*[rR]%3u.%2u", &before_point, &after_point);
                     }
-                    pc.printf("Before: %d\n\r", before_point);
-                    pc.printf("After: %d\n\r", after_point);
-                    if (before_point > 999 || before_point < 0) {
+                    if (after_point < 0 || before_point < 0) {
                         queueMessage(ROTATION_ERROR, uint32_t(before_point));
                     }
-                    if (after_point < 10 && after_point >= 0) {
-                        decimal = double(after_point) / 10;
-                    }
-                    else if (after_point < 100 && after_point >= 10) {
-                        decimal = double(after_point) / 100;
-                    } else {
-                        // Something happened
-                        queueMessage(ROTATION_ERROR, uint32_t(after_point));
-                    }
-                    rev_tmp = before_point + decimal;
+                    rev_tmp = intsToDouble(before_point, after_point);
                     if (neg_check == '-') {
                         rev_tmp = -rev_tmp;
                     }
-                    pc.printf("Rotation: %lf\n\r", rev_tmp);
                     target_rotations = rotations + rev_tmp;
                     target_position = int32_t(6 * target_rotations);
+                    queueMessage(NEW_ROTATION, uint64_t(rev_tmp));
                     break;
 
                 //TODO: set speed
@@ -436,15 +435,16 @@ void decodeCommands(){
                     sscanf(command, "%*[vV]%3u.%u", &before_point, &after_point);
                     pc.printf("Before: %d\n\r", before_point);
                     pc.printf("After: %d\n\r", after_point);
-                    // target_velocity = int32_t(vel_tmp);
-                    // queueMessage(NEW_SPEED, target_velocity);
+                    vel_tmp = intsToDouble(before_point, after_point);
+                    target_velocity = vel_tmp;
+                    queueMessage(NEW_SPEED, uint64_t(target_velocity));
                     break;
 
                 // K[0-9a-f]{16}
                 case 'K':
                 case 'k':
                     newKey_mutex.lock();
-                    sscanf(command, "%*[kK]%16x", &newKey);
+                    sscanf(command, "%*[kK]%016x", &newKey);
                     // pc.printf("Key: %16x", newKey);
                     queueMessage(NEW_KEY, uint64_t(newKey));
                     *key = newKey;
@@ -509,9 +509,9 @@ void velocityCalc(){
     velocity_error = target_velocity - abs(velocity);
     velocity_controller = std::copysign(K_P * velocity_error, position_error); 
 
-    if (velocity_controller + 128 < 0) {
-      lead = -lead;
-    }
+    // if (velocity_controller + 128 < 0) {
+    //   lead = -lead;
+    // }
     if (velocity + 128 < 0) {
       controller_used = max(velocity_controller, position_controller);
     } else {
@@ -520,6 +520,10 @@ void velocityCalc(){
 
     cmd_torque = 128 + controller_used; // What's the baseline for position?
 
+    if (cmd_torque < 0) {
+        lead = -lead;
+    }
+    
     if (iter == 10){
       // Print velocity
         // queueMessage(MSG, uint64_t(VELOCITY));
