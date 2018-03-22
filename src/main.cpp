@@ -64,7 +64,7 @@ DigitalOut L2H(L2Hpin);
 PwmOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
-const int PWM_PERIOD=2000; // us
+const int PWM_PERIOD = 2000; // us
 // Duty cycle must be between 0 and 50% of 2000
 
 //Encoder
@@ -96,7 +96,10 @@ enum msg_types{
     ROTATIONS,
     TARGET_POSITION,
     TARGET_VELOCITY,
-    TARGET_ROTATIONS
+    TARGET_ROTATIONS,
+    K_D_ENUM,
+    K_P_ENUM,
+    K_I_ENUM
 };
 
 // ---------- SERIAL VARIABLES ----------
@@ -132,11 +135,10 @@ uint32_t hash_count = 0;
 volatile uint64_t newKey;
 
 // ---------- SPEED/ENCODER VARIABLES ----------
-float velocity = 0;
+volatile float velocity = 0;
 volatile float target_velocity = 50;
-int16_t velocity_count = 0;
 
-int32_t motor_position = 0;
+volatile int32_t motor_position = 0;
 volatile float target_rotations = 15;
 volatile int32_t target_position = int32_t(6 * target_rotations);
 
@@ -145,8 +147,16 @@ volatile float rotations = 0;
 int32_t encoder_state = 0;
 
 uint32_t cmd_torque = 0.5 * PWM_PERIOD; // Max power (duty cycle) allowed is 50%
-uint32_t K_P = 46;
-uint32_t K_D = 30;
+
+
+volatile uint32_t K_PV = 25;
+volatile uint32_t K_PP = 100;
+volatile uint32_t K_I = 30;
+volatile uint32_t K_D = 150;
+
+volatile float velocity_error = 0;
+
+volatile float position_error = 0;
 
 
 // ---------- THREADING VARIABLES ----------
@@ -197,37 +207,26 @@ int8_t motorHome() {
 
 void updateMotor(){
 
-    static int8_t last_state = 0;
+    static int8_t last_state;
     int8_t intState = readRotorState();
 
-    // Compare with last_state
-    if (!(intState == 7 && last_state == 0) && ((intState == 0 && last_state == 7) || intState > last_state)){
-        velocity_count++;
-    } else if ((intState == 7 && last_state == 0) || (intState < last_state)){
-        velocity_count--;
-    }
-
-    last_state = intState;
+    // last_state = intState;
     motorOut((intState - orState + lead + 6) % 6, cmd_torque); //+6 to make sure the remainder is positive
 
-    if(intState - orState == 5)
+    if(intState - last_state == 5)
     {
       motor_position--;
     }
-    else if(intState - orState == -5)
+    else if(intState - last_state == -5)
     {
       motor_position++;
     }
     else
     {
-      motor_position += (intState - orState);
-    //   orState = intState;
+      motor_position += (intState - last_state);
     }
     rotations = float(motor_position) / 6;
-
-    // 'intState' is 'rotorState' from the instructions
-    // 'orState' is 'oldRotorState' from the instructions
-    // 'cmd_torque' is 'motorPower' from the instructions
+    last_state = intState;
 }
 
 void updateEncoder(){
@@ -250,39 +249,6 @@ void updateEncoder(){
 
     last_state = current_state;
 }
-
-// checks if key is valid and updates
-//TODO: update to work with int
-// void valid_key(uint64_t key){
-//     bool valid = false;
-//     const int string_len = strlen(buff);
-//     for (int i = 0; i < string_len; ++i){
-//         if (buff[i] > 47 && buff[i] < 58){
-//             // 0-9
-//             valid = true;
-//         } else if (buff[i] > 64 && buff[i] < 71){
-//             // A-F
-//             valid = true;
-//         } else if (buff[i] > 96 && buff[i] < 103){
-//             // a-f
-//             valid = true;
-//         } else {
-//             valid = false;
-//             break;
-//         }
-//     }
-//     if (valid){
-//         newKey_mutex.lock();
-
-//         newKey = key;
-//         queueMessage(MSG, uint64_t(YAY));
-//         queueMessage(NEW_KEY, newKey);
-
-//         newKey_mutex.unlock();
-//     } else {
-//         queueMessage(MSG, uint64_t(NAY));
-//     }
-// }
 
 // Checks message queue and prints
 void serialPrint(){
@@ -327,6 +293,15 @@ void serialPrint(){
                         break;
                     case TARGET_VELOCITY:
                         pc.printf("Target Velocity: %lf\n\r", target_velocity);
+                        break;
+                    case K_P_ENUM:
+                        pc.printf("KP: %u\n\r", K_PP);
+                        break;
+                    case K_I_ENUM:
+                        pc.printf("KI: %u\n\r", K_I);
+                        break;
+                    case K_D_ENUM:
+                        pc.printf("KD: %u\n\r", K_D);
                         break;
                 }
             break;
@@ -408,6 +383,9 @@ void decodeCommands(){
             float vel_tmp = 0;
             char neg_check = '\0';
             float decimal = 0;
+            uint32_t kpp_set = 0;
+            uint32_t ki_set = 0;
+            uint32_t kd_set = 0;
 
             switch(command[0]) {
                 //TODO: set number of rotations
@@ -424,9 +402,12 @@ void decodeCommands(){
                     if (neg_check == '-') {
                         rev_tmp = -rev_tmp;
                     }
+                    position_error = 0;
+                    velocity_error = 0;
                     target_rotations = rotations + rev_tmp;
                     target_position = int32_t(6 * target_rotations);
                     queueMessage(NEW_ROTATION, uint64_t(rev_tmp));
+                    updateMotor();
                     break;
 
                 //TODO: set speed
@@ -436,6 +417,8 @@ void decodeCommands(){
                     pc.printf("Before: %d\n\r", before_point);
                     pc.printf("After: %d\n\r", after_point);
                     vel_tmp = intsTofloat(before_point, after_point);
+                    velocity_error = 0;
+                    position_error = 0;
                     target_velocity = vel_tmp;
                     queueMessage(NEW_SPEED, uint64_t(target_velocity));
                     break;
@@ -451,6 +434,28 @@ void decodeCommands(){
                     newKey_mutex.unlock();
                     //valid_key(tmp);
                     break;
+                
+                case 'Q':
+                case 'q':
+                    sscanf(command, "%*[qQ]%u", &kpp_set);
+                    pc.printf("KP: %u\n\r", kpp_set);
+                    K_PP = kpp_set;
+                    break;
+
+                case 'W':
+                case 'w':
+                    sscanf(command, "%*[wW]%u", &ki_set);
+                    pc.printf("KI: %u\n\r", ki_set);
+                    K_I = ki_set;
+                    break;
+
+                case 'E':
+                case 'e':
+                    sscanf(command, "%*[eE]%u", &kd_set);
+                    pc.printf("KD: %u\n\r", kd_set);
+                    K_D = kd_set;
+                    break;
+
 
                 default:
                     queueMessage(MSG, uint64_t(WRONG_ORDER));
@@ -474,15 +479,18 @@ void velocityCalc(){
   static uint8_t iter = 0;
   float local_vc = 0;
   float time_passed = 1;
-
-  float velocity_error = 0;
-
-  float position_error = 0;
+  uint32_t tmp_cmd_torque = 0;
+  static float i_error = 0;
 
   float velocity_controller = 0;
   float position_controller = 0;
 
   float controller_used = 0;
+
+  static int32_t oldMotorPosition = 0;
+
+    Ticker motorCtrlTicker;
+    motorCtrlTicker.attach_us(&signalVelocity, 100000); // 100ms
 
   while (true){
     // Wait until signal from signalVelocity
@@ -492,30 +500,36 @@ void velocityCalc(){
     //local variable.
     t.stop();
     __disable_irq();
-    local_vc = float(velocity_count);
-    velocity_count = 0;
+    local_vc = float(motor_position - oldMotorPosition);
     __enable_irq();
+
     time_passed = t.read();
-    velocity = (local_vc * 10 / 6);
+    velocity = (local_vc / (time_passed * 6));
+    oldMotorPosition = motor_position;
 
     t.reset();
     t.start();
 
     // Implementing position control only
     position_error = target_position - motor_position;
-    position_controller = K_P * position_error + (K_D * position_error) / time_passed;
+    i_error += (position_error * time_passed);
+    position_controller = (K_PP * position_error) + (K_I * i_error) + (K_D * position_error) / time_passed;
 
     // Implementing velocity control only
     velocity_error = target_velocity - abs(velocity);
-    velocity_controller = std::copysign(K_P * velocity_error, position_error); 
+    velocity_controller = std::copysign(K_PV * velocity_error, position_error); 
 
     if (velocity < 0) {
       controller_used = max(velocity_controller, position_controller);
     } else {
       controller_used = min(velocity_controller, position_controller);
     }
-
-    cmd_torque = 128 + controller_used; // What's the baseline for position?
+    
+    if (controller_used > 1000){
+        cmd_torque = 1000;
+    } else {
+        cmd_torque = controller_used;
+    }
 
     if (velocity_controller < 0) {
         lead = -lead;
@@ -523,10 +537,14 @@ void velocityCalc(){
 
     if (iter == 10){
       // Print velocity
-        queueMessage(MSG, uint64_t(VELOCITY));
-        queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
-        // queueMessage(MSG, uint64_t(ROTATIONS));
-        // queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
+        // printf("Vel Cont: %f", velocity_controller);
+        // queueMessage(MSG, uint64_t(VELOCITY));
+        // queueMessage(MSG, uint64_t(TARGET_VELOCITY));  
+        queueMessage(MSG, uint64_t(ROTATIONS));
+        queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
+        queueMessage(MSG, uint64_t(K_P_ENUM));
+        queueMessage(MSG, uint64_t(K_I_ENUM));
+        queueMessage(MSG, uint64_t(K_D_ENUM));
         iter = 0;
     }
   }
@@ -543,9 +561,9 @@ int main() {
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
 
     // Initialisation PWM period
-    L1L.period_us(PWM_PERIOD);
-    L2L.period_us(PWM_PERIOD);
-    L3L.period_us(PWM_PERIOD);
+    L1L.period_us(0.5 * PWM_PERIOD);
+    L2L.period_us(0.5 * PWM_PERIOD);
+    L3L.period_us(0.5 * PWM_PERIOD);
     //set photointerrupter interrupts
     I1.rise(&updateMotor);
     I1.fall(&updateMotor);
@@ -566,8 +584,6 @@ int main() {
 
     // Velocity calculation thread
     velocityCalc_th.start(&velocityCalc);
-    Ticker t;
-    t.attach(&signalVelocity, 0.1); // 100ms
 
     updateMotor();
     while(true){
