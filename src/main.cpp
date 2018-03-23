@@ -80,7 +80,8 @@ enum printCodes{
     NEW_ROTATION,
     ROTOR_ORIGIN,
     NONCE_FOUND,
-    ROTATION_ERROR
+    ROTATION_ERROR,
+    HASH_RATE
 };
 
 enum msg_types{
@@ -100,11 +101,12 @@ enum msg_types{
     K_D_ENUM,
     K_P_ENUM,
     K_I_ENUM
-}
-// ---------- SERIAL VARIABLES ----------v
+};
+
+// ---------- SERIAL VARIABLES ----------
 RawSerial pc(SERIAL_TX, SERIAL_RX);
 
-//TODO: change data to 32 bits and put two messages on the queue for the key
+// Message struct
 typedef struct{
     printCodes code;
     uint64_t data;
@@ -141,17 +143,17 @@ volatile int32_t motor_position = 0;
 volatile float target_rotations = 15;
 volatile int32_t target_position = int32_t(6 * target_rotations);
 
-volatile float rotations = 0;
+volatile int32_t rotations = 0;
 
 int32_t encoder_state = 0;
 
 uint32_t cmd_torque = 0.5 * PWM_PERIOD; // Max power (duty cycle) allowed is 50%
 
 
-volatile uint32_t K_PV = 35;
-volatile uint32_t K_PP = 60;
-volatile uint32_t K_I = 10;
-volatile uint32_t K_D = 40;
+volatile uint32_t K_PV = 85;
+volatile uint32_t K_PP = 58;
+volatile uint32_t K_I = 2;
+volatile uint32_t K_D = 36;
 
 
 volatile float i_error = 0;
@@ -163,9 +165,9 @@ volatile float position_error = 0;
 
 
 // ---------- THREADING VARIABLES ----------
-Thread serialPrint_th(osPriorityNormal, 1000);
-Thread decodeCommands_th(osPriorityNormal, 1000);
-Thread velocityCalc_th(osPriorityNormal, 1000);
+Thread serialPrint_th(osPriorityNormal, 1024);
+Thread decodeCommands_th(osPriorityNormal, 1024);
+Thread velocityCalc_th(osPriorityHigh, 1024);
 
 Mutex newKey_mutex;
 
@@ -215,7 +217,6 @@ void updateMotor(){
     static int8_t last_state;
     int8_t intState = readRotorState() - orState;
 
-    // last_state = intState;
     motorOut((intState + lead + 6) % 6, cmd_torque); //+6 to make sure the remainder is positive
     
     if(intState - last_state == 5)
@@ -230,7 +231,7 @@ void updateMotor(){
     {
       motor_position += (intState - last_state);
     }
-    rotations = float(motor_position) / 6;
+    rotations = int32_t(motor_position / 6);
     last_state = intState;
 }
 
@@ -291,7 +292,7 @@ void serialPrint(){
                         pc.printf("Target Rotations: %lf\n\r", target_rotations);
                         break;
                     case ROTATIONS:
-                        pc.printf("Rotations: %lf\n\r", rotations);
+                        pc.printf("Rotations: %d\n\r", rotations);
                         break;
                     case TARGET_POSITION:
                         pc.printf("Target Position: %d\n\r", target_position);
@@ -332,6 +333,9 @@ void serialPrint(){
             case ROTATION_ERROR:
                 pc.printf("Error, your input for setting revolutions was wrong!", pMessage->data);
                 break;
+            case HASH_RATE:
+                pc.printf("Hash Rate is %u\n\r", pMessage->data);
+                break;
         }
 
         outMessages.free(pMessage);
@@ -352,6 +356,7 @@ void serialISR(){
     charBuffer.put((void*)newChar);
 }
 
+// Function for converting 2 unsigned ints to a float for the regex's in decodeCommands
 float intsTofloat(int pre_point, int post_point) {
     if (post_point > 0){
         double power = ceil(log10(double(post_point))); 
@@ -387,13 +392,11 @@ void decodeCommands(){
             int after_point = 0;
             float vel_tmp = 0;
             char neg_check = '\0';
-            float decimal = 0;
             uint32_t kpp_set = 0;
             uint32_t ki_set = 0;
             uint32_t kd_set = 0;
 
             switch(command[0]) {
-                //TODO: set number of rotations
                 case 'R':
                 case 'r':
                     sscanf(command, "%*[rR]%c%3u.%2u", &neg_check, &before_point, &after_point);
@@ -407,7 +410,7 @@ void decodeCommands(){
                     if (neg_check == '-') {
                         rev_tmp = -rev_tmp;
                     }
-                    if (rev_tmp == 0.0){
+                    if (rev_tmp == 0){
                         if (lead == -2){
                             target_rotations -= 1;
                         } else {
@@ -424,14 +427,13 @@ void decodeCommands(){
                     updateMotor();
                     break;
 
-                //TODO: set speed
                 case 'V':
                 case 'v':
                     sscanf(command, "%*[vV]%3u.%u", &before_point, &after_point);
                     pc.printf("Before: %d\n\r", before_point);
                     pc.printf("After: %d\n\r", after_point);
                     vel_tmp = intsTofloat(before_point, after_point);
-                    if (vel_tmp == 0.0){
+                    if (vel_tmp == 0){
                         target_velocity = 500;
                     } else {
                         target_velocity = vel_tmp;
@@ -442,7 +444,6 @@ void decodeCommands(){
                     queueMessage(NEW_SPEED, uint64_t(target_velocity));
                     break;
 
-                // K[0-9a-f]{16}
                 case 'K':
                 case 'k':
                     newKey_mutex.lock();
@@ -456,6 +457,7 @@ void decodeCommands(){
                 
                 case 'Q':
                 case 'q':
+                    // For setting Kp for rotations
                     sscanf(command, "%*[qQ]%u", &kpp_set);
                     pc.printf("KP: %u\n\r", kpp_set);
                     K_PP = kpp_set;
@@ -463,6 +465,7 @@ void decodeCommands(){
 
                 case 'W':
                 case 'w':
+                    // For setting Ki for rotations
                     sscanf(command, "%*[wW]%u", &ki_set);
                     pc.printf("KI: %u\n\r", ki_set);
                     K_I = ki_set;
@@ -470,6 +473,7 @@ void decodeCommands(){
 
                 case 'E':
                 case 'e':
+                    // For setting Kd for rotations
                     sscanf(command, "%*[eE]%u", &kd_set);
                     pc.printf("KD: %u\n\r", kd_set);
                     K_D = kd_set;
@@ -487,17 +491,14 @@ void decodeCommands(){
 
 
 void signalVelocity(){
-  velocityCalc_th.signal_set(0x1);//velSig = 1;
+  velocityCalc_th.signal_set(0x1); //velSig = 1;
 }
-
-
 
 Timer t;
 void velocityCalc(){
   static uint8_t iter = 0;
   float local_vc = 0;
   float time_passed = 1;
-  uint32_t tmp_cmd_torque = 0;
 
   float velocity_controller = 0;
   float position_controller = 0;
@@ -555,29 +556,21 @@ void velocityCalc(){
         lead = 2;
     }
 
-    if (iter == 10){
-      // Print velocity
-        // printf("Vel Cont: %f", velocity_controller);
+    if (iter == 15){
         queueMessage(MSG, uint64_t(VELOCITY));
         queueMessage(MSG, uint64_t(TARGET_VELOCITY)); 
-        // printf("CMD torque: %u\n\r", cmd_torque);
-        // printf("Velo Cont: %f\n\r", velocity_controller); 
         queueMessage(MSG, uint64_t(ROTATIONS));
         queueMessage(MSG, uint64_t(TARGET_ROTATIONS));
-        queueMessage(MSG, uint64_t(K_P_ENUM));
-        queueMessage(MSG, uint64_t(K_I_ENUM));
-        queueMessage(MSG, uint64_t(K_D_ENUM));
+        // queueMessage(MSG, uint64_t(K_P_ENUM));
+        // queueMessage(MSG, uint64_t(K_I_ENUM));
+        // queueMessage(MSG, uint64_t(K_D_ENUM));
         iter = 0;
     }
   }
 }
 
-
-
-
-
 int main() {
-
+    Timer hash_timer;
     //Run the motor synchronisation
     orState = motorHome();
     queueMessage(ROTOR_ORIGIN, uint64_t(orState));
@@ -607,6 +600,8 @@ int main() {
     // Velocity calculation thread
     velocityCalc_th.start(&velocityCalc);
 
+    hash_timer.start();
+
     updateMotor();
     while(true){
         //copy new key across
@@ -618,9 +613,14 @@ int main() {
 
         //successful nonce
         if((hash[0] == 0) && (hash[1] == 0)){
-            // queueMessage(NONCE_FOUND, *nonce);
+            queueMessage(NONCE_FOUND, *nonce);
         }
         *nonce += 1;
         hash_count++;
+        if (hash_timer.read() > 1.0f) {
+            queueMessage(HASH_RATE, uint64_t(hash_count));
+            hash_count = 0;
+            hash_timer.reset();
+        }
     }
 }
